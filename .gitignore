@@ -1,1 +1,4 @@
+firmware/keychron-qmk/
+firmware/*.log
+firmware/out/*.bin
 target
