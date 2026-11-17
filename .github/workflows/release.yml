@@ -1,0 +1,158 @@
+name: Release
+
+# Pushing a tag like v0.1.0 builds Linux, macOS and Windows packages and publishes a GitHub release.
+# Run it by hand (Actions > Release > Run workflow) to build the packages without publishing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  QT_VERSION: 6.8.3
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    name: Build the wireless-config firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the ARM toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
+      - name: Build
+        run: VERSION="${GITHUB_REF_NAME:-dev}" firmware/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: firmware/out/keywright-q6max-wireless-*
+          if-no-files-found: error
+
+  package:
+    name: Package (${{ matrix.name }})
+    needs: firmware
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux, os: ubuntu-latest }
+          - { name: macOS, os: macos-latest }
+          - { name: Windows, os: windows-latest, qt_arch: win64_msvc2022_64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: firmware-bundle
+      - name: Work out the version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Install system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev libxkbcommon-x11-0 libxcb-cursor0 libegl1 libgl1 libfontconfig1 libfuse2
+      - name: Build
+        run: cargo build --release -p keywright
+
+      # ---- Linux: AppImage ----------------------------------------------------------------
+      - name: Package (Linux AppImage)
+        if: runner.os == 'Linux'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          QML_SOURCES_PATHS: ${{ github.workspace }}/crates/app/qml
+          LINUXDEPLOY_OUTPUT_VERSION: ${{ env.VERSION }}
+        run: |
+          curl -fsSL -o linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSL -o linuxdeploy-plugin-qt https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy linuxdeploy-plugin-qt
+          mkdir -p AppDir/usr/share/keywright/firmware
+          cp firmware-bundle/* AppDir/usr/share/keywright/firmware/
+          ./linuxdeploy --appdir AppDir -e target/release/keywright -d packaging/keywright.desktop -i packaging/icons/keywright-256.png --plugin qt --output appimage
+          mkdir dist
+          mv Keywright*.AppImage "dist/Keywright-${VERSION:-dev}-linux-x86_64.AppImage"
+          cp packaging/70-keywright.rules dist/70-keywright.rules
+
+      # ---- macOS: .app in a .dmg ----------------------------------------------------------
+      - name: Package (macOS dmg)
+        if: runner.os == 'macOS'
+        run: |
+          app=Keywright.app
+          mkdir -p $app/Contents/MacOS $app/Contents/Resources/firmware
+          cp target/release/keywright $app/Contents/MacOS/keywright
+          cp firmware-bundle/* $app/Contents/Resources/firmware/
+          mkdir icons.iconset
+          cp packaging/icons/keywright-32.png  icons.iconset/icon_16x16@2x.png
+          cp packaging/icons/keywright-32.png  icons.iconset/icon_32x32.png
+          cp packaging/icons/keywright-64.png  icons.iconset/icon_32x32@2x.png
+          cp packaging/icons/keywright-128.png icons.iconset/icon_128x128.png
+          cp packaging/icons/keywright-256.png icons.iconset/icon_128x128@2x.png
+          cp packaging/icons/keywright-256.png icons.iconset/icon_256x256.png
+          iconutil -c icns icons.iconset -o $app/Contents/Resources/keywright.icns
+          cat > $app/Contents/Info.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>Keywright</string>
+            <key>CFBundleDisplayName</key><string>Keywright</string>
+            <key>CFBundleIdentifier</key><string>io.github.shatteredeagle.keywright</string>
+            <key>CFBundleExecutable</key><string>keywright</string>
+            <key>CFBundleIconFile</key><string>keywright</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION:-0.0.0}</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSInputMonitoringUsageDescription</key><string>Keywright talks to your keyboard over its configuration channel.</string>
+          </dict></plist>
+          PLIST
+          macdeployqt $app -qmldir=crates/app/qml
+          mkdir dist
+          hdiutil create -volname Keywright -srcfolder $app -ov -format UDZO "dist/Keywright-${VERSION:-dev}-macos-arm64.dmg"
+
+      # ---- Windows: zip -------------------------------------------------------------------
+      - name: Package (Windows zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ver = if ($env:VERSION) { $env:VERSION } else { "dev" }
+          New-Item -ItemType Directory -Force Keywright/firmware | Out-Null
+          Copy-Item target/release/keywright.exe Keywright/
+          Copy-Item firmware-bundle/* Keywright/firmware/
+          windeployqt --qmldir crates/app/qml --release Keywright/keywright.exe
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path Keywright -DestinationPath "dist/Keywright-$ver-windows-x86_64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: "*"
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" $flags --generate-notes --title "Keywright ${GITHUB_REF_NAME#v}" \
+            --notes-file docs/release-notes-footer.md artifacts/*
