@@ -1,5 +1,7 @@
 //! VIA raw-HID protocol client for QMK keyboards (Keychron Q6 Max first).
 
+pub mod layout;
+
 use hidapi::{HidApi, HidDevice};
 use std::time::Duration;
 
