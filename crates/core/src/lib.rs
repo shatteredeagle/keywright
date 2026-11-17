@@ -150,11 +150,20 @@ impl Keyboard {
     /// Apply backlight settings; with `save` they survive a power cycle.
     /// The firmware clamps brightness 255 to 254 on write, so callers should not rewrite untouched fields.
     pub fn set_rgb_basic(&self, v: &RgbBasic, save: bool) -> Result<()> {
-        self.custom_set(RGB_CHANNEL, 1, &[v.brightness])?;
-        self.custom_set(RGB_CHANNEL, 2, &[v.effect])?;
-        self.custom_set(RGB_CHANNEL, 3, &[v.speed])?;
-        self.custom_set(RGB_CHANNEL, 4, &[v.hue, v.saturation])?;
-        if save { self.save_channel(RGB_CHANNEL)?; }
+        // Keychron's firmware persists only when a single value changed since the last save,
+        // so each value is saved on its own.
+        let writes: [(u8, &[u8]); 4] = [
+            (1, &[v.brightness]),
+            (2, &[v.effect]),
+            (3, &[v.speed]),
+            (4, &[v.hue, v.saturation]),
+        ];
+        for (id, data) in writes {
+            self.custom_set(RGB_CHANNEL, id, data)?;
+            if save {
+                self.save_channel(RGB_CHANNEL)?;
+            }
+        }
         Ok(())
     }
 

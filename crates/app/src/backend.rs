@@ -227,6 +227,10 @@ impl qobject::Backend {
     }
 
     fn save_rgb(&self) -> bool {
-        self.rust().keyboard.as_ref().is_some_and(|kb| kb.save_channel(keywright_core::RGB_CHANNEL).is_ok())
+        // Keychron firmware persists one changed value per save, so rewrite and save each value.
+        self.rust()
+            .keyboard
+            .as_ref()
+            .is_some_and(|kb| kb.rgb_basic().and_then(|v| kb.set_rgb_basic(&v, true)).is_ok())
     }
 }
