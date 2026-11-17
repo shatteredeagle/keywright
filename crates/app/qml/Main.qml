@@ -127,7 +127,8 @@ ApplicationWindow {
                             { name: "Keymap", icon: "keyboard" },
                             { name: "Lighting", icon: "sun" },
                             { name: "Macros", icon: "macro" },
-                            { name: "Shortcuts", icon: "list" }
+                            { name: "Shortcuts", icon: "list" },
+                            { name: "Firmware", icon: "chip" }
                         ]
                         delegate: Rectangle {
                             id: nav
@@ -312,12 +313,17 @@ ApplicationWindow {
                 ShortcutsPage {
                     layers: win.keymap.layers
                 }
+
+                FirmwarePage {
+                    backend: backend
+                    onReconnectRequested: win.reload()
+                }
             }
         }
 
         // Shown over the pages when no keyboard answers.
         Rectangle {
-            visible: !backend.connected
+            visible: !backend.connected && pages.currentIndex !== 4   // the Firmware page works without a normal connection
             x: 232; width: parent.width - 232; height: parent.height
             color: Theme.bg
             ColumnLayout {

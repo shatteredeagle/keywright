@@ -19,6 +19,8 @@ Item {
         "chevron-down": "M6 9l6 6 6-6",
         "chevron-up": "M6 15l6-6 6 6",
         "refresh": "M21 12a9 9 0 1 1-2.6-6.4 M21 3v6h-6",
+        "chip": "M7 7h10v10H7z M9 3v4 M15 3v4 M9 17v4 M15 17v4 M3 9h4 M3 15h4 M17 9h4 M17 15h4",
+        "alert": "M12 4L2.5 20h19z M12 10v4.5 M12 17.5h.01",
         "plus": "M12 5v14 M5 12h14",
         "minus": "M5 12h14",
         "x": "M6 6l12 12 M18 6L6 18",

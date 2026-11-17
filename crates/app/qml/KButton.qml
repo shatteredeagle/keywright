@@ -14,7 +14,7 @@ Button {
     hoverEnabled: true
     opacity: enabled ? 1 : 0.45
 
-    readonly property color fg: variant === "primary" && !chip ? Theme.accentText
+    readonly property color fg: variant === "danger" ? "#ffffff" : variant === "primary" && !chip ? Theme.accentText
         : selected ? Theme.accentHi : Theme.text
 
     contentItem: Row {
@@ -33,12 +33,13 @@ Button {
     background: Rectangle {
         radius: c.chip ? height / 2 : Theme.radiusSmall
         color: {
+            if (c.variant === "danger") return c.down || c.hovered ? Qt.darker(Theme.danger, 1.15) : Theme.danger;
             if (c.variant === "primary" && !c.chip) return c.down ? Theme.accentHi : c.hovered ? Theme.accentHi : Theme.accent;
             if (c.selected) return Theme.accentSoft;
             if (c.variant === "ghost") return c.hovered ? Theme.panelHi : "transparent";
             return c.down ? Theme.line : c.hovered ? Theme.panelHi : Theme.panel;
         }
-        border.width: c.variant === "ghost" || (c.variant === "primary" && !c.chip) ? 0 : 1
+        border.width: c.variant === "ghost" || c.variant === "danger" || (c.variant === "primary" && !c.chip) ? 0 : 1
         border.color: c.selected ? Theme.accent : Theme.line
         Behavior on color { ColorAnimation { duration: 110 } }
     }

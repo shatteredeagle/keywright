@@ -82,7 +82,11 @@ impl FlashLayout {
 
     /// Sectors that overlap `len` bytes written from the start of flash.
     pub fn sectors_for(&self, len: u32) -> Vec<(u32, u32)> {
-        self.sectors.iter().copied().filter(|&(a, _)| a < self.start + len).collect()
+        self.sectors
+            .iter()
+            .copied()
+            .filter(|&(a, _)| a < self.start + len)
+            .collect()
     }
 }
 
@@ -98,11 +102,18 @@ pub struct ImageInfo {
 pub fn check_image(data: &[u8]) -> std::result::Result<ImageInfo, Vec<String>> {
     let mut problems = Vec::new();
     if data.len() < 1024 {
-        problems.push(format!("The file is only {} bytes, far too small for firmware.", data.len()));
+        problems.push(format!(
+            "The file is only {} bytes, far too small for firmware.",
+            data.len()
+        ));
         return Err(problems);
     }
     if data.len() as u32 > FLASH_SIZE {
-        problems.push(format!("The file is {} bytes, larger than the keyboard's {} KB of flash.", data.len(), FLASH_SIZE / 1024));
+        problems.push(format!(
+            "The file is {} bytes, larger than the keyboard's {} KB of flash.",
+            data.len(),
+            FLASH_SIZE / 1024
+        ));
     }
     let word = |i: usize| u32::from_le_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]);
     let (sp, reset) = (word(0), word(4));
@@ -110,17 +121,27 @@ pub fn check_image(data: &[u8]) -> std::result::Result<ImageInfo, Vec<String>> {
         problems.push(format!("The first word ({sp:#010x}) is not a valid stack address for this chip, so this is probably not a raw .bin firmware."));
     }
     if reset & 1 == 0 || !(FLASH_START..FLASH_START + FLASH_SIZE).contains(&(reset & !1)) {
-        problems.push(format!("The reset vector ({reset:#010x}) does not point into this chip's flash."));
+        problems.push(format!(
+            "The reset vector ({reset:#010x}) does not point into this chip's flash."
+        ));
     }
     if problems.is_empty() {
-        Ok(ImageInfo { size: data.len(), sha256: sha256_hex(data), stack_pointer: sp, reset_vector: reset })
+        Ok(ImageInfo {
+            size: data.len(),
+            sha256: sha256_hex(data),
+            stack_pointer: sp,
+            reset_vector: reset,
+        })
     } else {
         Err(problems)
     }
 }
 
 pub fn sha256_hex(data: &[u8]) -> String {
-    Sha256::digest(data).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(data)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// What stage a flash operation is in.
@@ -138,21 +159,34 @@ pub fn find_bootloaders() -> Result<Vec<BootloaderInfo>> {
     let ctx = Context::new()?;
     let mut found = Vec::new();
     for device in ctx.devices()?.iter() {
-        let Ok(desc) = device.device_descriptor() else { continue };
+        let Ok(desc) = device.device_descriptor() else {
+            continue;
+        };
         if desc.vendor_id() != ST_VID || desc.product_id() != DFU_PID {
             continue;
         }
         let (mut serial, mut layout) = (String::new(), String::new());
         if let Ok(handle) = device.open() {
-            serial = desc.serial_number_string_index().and_then(|i| handle.read_string_descriptor_ascii(i).ok()).unwrap_or_default();
+            serial = desc
+                .serial_number_string_index()
+                .and_then(|i| handle.read_string_descriptor_ascii(i).ok())
+                .unwrap_or_default();
             layout = flash_layout_string(&device, &handle).unwrap_or_default();
         }
-        found.push(BootloaderInfo { bus: device.bus_number(), address: device.address(), serial, layout });
+        found.push(BootloaderInfo {
+            bus: device.bus_number(),
+            address: device.address(),
+            serial,
+            layout,
+        });
     }
     Ok(found)
 }
 
-fn flash_layout_string(device: &rusb::Device<Context>, handle: &DeviceHandle<Context>) -> Option<String> {
+fn flash_layout_string(
+    device: &rusb::Device<Context>,
+    handle: &DeviceHandle<Context>,
+) -> Option<String> {
     let config = device.active_config_descriptor().ok()?;
     for interface in config.interfaces() {
         for setting in interface.descriptors() {
@@ -178,17 +212,31 @@ impl Bootloader {
         let matches: Vec<_> = ctx
             .devices()?
             .iter()
-            .filter(|d| d.device_descriptor().map(|x| x.vendor_id() == ST_VID && x.product_id() == DFU_PID).unwrap_or(false))
+            .filter(|d| {
+                d.device_descriptor()
+                    .map(|x| x.vendor_id() == ST_VID && x.product_id() == DFU_PID)
+                    .unwrap_or(false)
+            })
             .collect();
         match matches.len() {
-            0 => return Err(Error::Dfu("No bootloader found. Put the keyboard in bootloader mode first.".into())),
+            0 => {
+                return Err(Error::Dfu(
+                    "No bootloader found. Put the keyboard in bootloader mode first.".into(),
+                ));
+            }
             1 => {}
-            n => return Err(Error::Dfu(format!("{n} STM32 bootloaders are attached. Unplug the others so only the keyboard remains."))),
+            n => {
+                return Err(Error::Dfu(format!(
+                    "{n} STM32 bootloaders are attached. Unplug the others so only the keyboard remains."
+                )));
+            }
         }
         let device = &matches[0];
         let handle = device.open().map_err(|e| Error::Dfu(open_hint(e)))?;
-        let layout_str = flash_layout_string(device, &handle).ok_or_else(|| Error::Dfu("The bootloader did not describe its flash.".into()))?;
-        let layout = FlashLayout::parse(&layout_str).ok_or_else(|| Error::Dfu(format!("Unrecognised flash layout: {layout_str}")))?;
+        let layout_str = flash_layout_string(device, &handle)
+            .ok_or_else(|| Error::Dfu("The bootloader did not describe its flash.".into()))?;
+        let layout = FlashLayout::parse(&layout_str)
+            .ok_or_else(|| Error::Dfu(format!("Unrecognised flash layout: {layout_str}")))?;
         if layout.start != FLASH_START || layout.total() != FLASH_SIZE {
             return Err(Error::Dfu(format!(
                 "This bootloader reports {} KB of flash at {:#x}. Keywright only flashes the Q6 Max's 256 KB STM32F401.",
@@ -198,19 +246,35 @@ impl Bootloader {
         }
         let mut handle = handle;
         let _ = handle.set_auto_detach_kernel_driver(true);
-        handle.claim_interface(0).map_err(|e| Error::Dfu(open_hint(e)))?;
+        handle
+            .claim_interface(0)
+            .map_err(|e| Error::Dfu(open_hint(e)))?;
         handle.set_alternate_setting(0, 0)?;
         Ok(Self { handle, layout })
     }
 
     fn status(&self) -> Result<(u8, u32, u8)> {
         let mut b = [0u8; 6];
-        self.handle.read_control(request_type(Direction::In, RequestType::Class, Recipient::Interface), DFU_GETSTATUS, 0, 0, &mut b, TIMEOUT)?;
+        self.handle.read_control(
+            request_type(Direction::In, RequestType::Class, Recipient::Interface),
+            DFU_GETSTATUS,
+            0,
+            0,
+            &mut b,
+            TIMEOUT,
+        )?;
         Ok((b[0], u32::from_le_bytes([b[1], b[2], b[3], 0]), b[4]))
     }
 
     fn request_out(&self, req: u8, value: u16, data: &[u8]) -> Result<()> {
-        self.handle.write_control(request_type(Direction::Out, RequestType::Class, Recipient::Interface), req, value, 0, data, TIMEOUT)?;
+        self.handle.write_control(
+            request_type(Direction::Out, RequestType::Class, Recipient::Interface),
+            req,
+            value,
+            0,
+            data,
+            TIMEOUT,
+        )?;
         Ok(())
     }
 
@@ -223,7 +287,9 @@ impl Bootloader {
                 _ => self.request_out(DFU_ABORT, 0, &[])?,
             }
         }
-        Err(Error::Dfu("The bootloader would not return to idle.".into()))
+        Err(Error::Dfu(
+            "The bootloader would not return to idle.".into(),
+        ))
     }
 
     /// Wait for a download request to finish.
@@ -231,7 +297,9 @@ impl Bootloader {
         for _ in 0..200 {
             let (status, poll, state) = self.status()?;
             if status != 0 {
-                return Err(Error::Dfu(format!("The bootloader reported error code {status}.")));
+                return Err(Error::Dfu(format!(
+                    "The bootloader reported error code {status}."
+                )));
             }
             if state == STATE_DNBUSY {
                 std::thread::sleep(Duration::from_millis(poll.max(1) as u64));
@@ -259,7 +327,14 @@ impl Bootloader {
 
     fn read_block(&self, block: u16, len: usize) -> Result<Vec<u8>> {
         let mut buf = vec![0u8; len];
-        let n = self.handle.read_control(request_type(Direction::In, RequestType::Class, Recipient::Interface), DFU_UPLOAD, block, 0, &mut buf, TIMEOUT)?;
+        let n = self.handle.read_control(
+            request_type(Direction::In, RequestType::Class, Recipient::Interface),
+            DFU_UPLOAD,
+            block,
+            0,
+            &mut buf,
+            TIMEOUT,
+        )?;
         buf.truncate(n);
         Ok(buf)
     }
@@ -292,7 +367,9 @@ impl Bootloader {
             progress(Phase::Verify, i, blocks);
             let back = self.read_block(2 + i as u16, chunk.len())?;
             if back != chunk {
-                return Err(Error::Dfu(format!("Verification failed in block {i}: the keyboard holds different data than was written. Do not unplug it. Flash again.")));
+                return Err(Error::Dfu(format!(
+                    "Verification failed in block {i}: the keyboard holds different data than was written. Do not unplug it. Flash again."
+                )));
             }
         }
         progress(Phase::Verify, blocks, blocks);
@@ -311,9 +388,13 @@ impl Bootloader {
 fn open_hint(e: rusb::Error) -> String {
     let base = format!("Could not open the bootloader ({e}).");
     if cfg!(target_os = "windows") {
-        format!("{base} On Windows the bootloader needs the WinUSB driver; install it with Zadig, then try again.")
+        format!(
+            "{base} On Windows the bootloader needs the WinUSB driver; install it with Zadig, then try again."
+        )
     } else if cfg!(target_os = "linux") {
-        format!("{base} Check that the udev rule from the Keywright package is installed, then unplug and replug the keyboard.")
+        format!(
+            "{base} Check that the udev rule from the Keywright package is installed, then unplug and replug the keyboard."
+        )
     } else {
         base
     }

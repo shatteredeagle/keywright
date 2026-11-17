@@ -15,6 +15,7 @@ fn main() {
                 "qml/RegionsPage.qml",
                 "qml/IndicatorsPage.qml",
                 "qml/MacrosPage.qml",
+                "qml/FirmwarePage.qml",
                 "qml/PageHeader.qml",
                 "qml/Card.qml",
                 "qml/KSwitch.qml",

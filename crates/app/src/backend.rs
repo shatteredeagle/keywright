@@ -61,6 +61,24 @@ pub mod qobject {
         fn set_macros(self: &Backend, json: &QString) -> QString;
 
         #[qinvokable]
+        fn fw_status(self: &Backend) -> QString;
+
+        #[qinvokable]
+        fn fw_check(self: &Backend, path: &QString) -> QString;
+
+        #[qinvokable]
+        fn fw_backup(self: &Backend) -> QString;
+
+        #[qinvokable]
+        fn fw_flash(self: Pin<&mut Backend>, path: &QString) -> bool;
+
+        #[qinvokable]
+        fn fw_progress(self: &Backend) -> QString;
+
+        #[qinvokable]
+        fn fw_restore(self: &Backend, path: &QString) -> QString;
+
+        #[qinvokable]
         fn theme(self: &Backend) -> QString;
 
         #[qinvokable]
@@ -238,8 +256,8 @@ impl qobject::Backend {
     }
 }
 
-/// Where the saved appearance lives: the platform's per-user settings folder.
-fn theme_file() -> Option<std::path::PathBuf> {
+/// The platform's per-user settings folder for Keywright.
+fn app_dir() -> Option<std::path::PathBuf> {
     use std::path::PathBuf;
     let base = if cfg!(target_os = "windows") {
         std::env::var_os("APPDATA").map(PathBuf::from)
@@ -250,7 +268,11 @@ fn theme_file() -> Option<std::path::PathBuf> {
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
     }?;
-    Some(base.join("keywright").join("theme"))
+    Some(base.join("keywright"))
+}
+
+fn theme_file() -> Option<std::path::PathBuf> {
+    app_dir().map(|d| d.join("theme"))
 }
 
 impl qobject::Backend {
@@ -488,6 +510,204 @@ impl qobject::Backend {
             .map_err(|e| e.to_string())
             .and_then(|size| macros::encode(&list, size as usize).map_err(|e| e.to_string()))
             .and_then(|buf| kb.write_macro_buffer(&buf).map_err(|e| e.to_string()));
+        QString::from(result.err().unwrap_or_default().as_str())
+    }
+}
+
+// ---- Firmware flashing ------------------------------------------------------------------------
+
+/// Progress of the background flash, polled by the UI.
+#[derive(Default, Clone, serde::Serialize)]
+struct FlashState {
+    running: bool,
+    finished: bool,
+    phase: Option<keywright_core::dfu::Phase>,
+    done: usize,
+    total: usize,
+    error: Option<String>,
+}
+
+fn flash_state() -> &'static std::sync::Mutex<FlashState> {
+    static STATE: std::sync::OnceLock<std::sync::Mutex<FlashState>> = std::sync::OnceLock::new();
+    STATE.get_or_init(Default::default)
+}
+
+/// Firmware shipped with the app: `firmware/*.bin` beside the program or in `share/keywright/firmware`.
+fn bundled_firmware() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let mut candidates = vec![
+        dir.join("firmware"),
+        dir.join("../share/keywright/firmware"),
+        dir.join("../Resources/firmware"),
+    ];
+    if let Some(custom) = std::env::var_os("KEYWRIGHT_FIRMWARE_DIR") {
+        candidates.insert(0, std::path::PathBuf::from(custom));
+    }
+    candidates.into_iter().find_map(|d| {
+        std::fs::read_dir(d)
+            .ok()?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .find(|p| {
+                p.extension().is_some_and(|x| x == "bin")
+                    && p.file_name()
+                        .is_some_and(|n| n.to_string_lossy().starts_with("keywright"))
+            })
+    })
+}
+
+fn describe_image(path: &std::path::Path) -> serde_json::Value {
+    match std::fs::read(path) {
+        Err(e) => json!({ "ok": false, "problems": [format!("Could not read the file: {e}")] }),
+        Ok(data) => match keywright_core::dfu::check_image(&data) {
+            Ok(info) => {
+                json!({ "ok": true, "path": path.to_string_lossy(), "name": path.file_name().map(|n| n.to_string_lossy().into_owned()), "size": info.size, "sha256": info.sha256 })
+            }
+            Err(problems) => {
+                json!({ "ok": false, "path": path.to_string_lossy(), "problems": problems })
+            }
+        },
+    }
+}
+
+impl qobject::Backend {
+    /// Everything the Firmware page shows: the installed version, any bootloader attached, the bundled image.
+    fn fw_status(&self) -> QString {
+        let version = self
+            .rust()
+            .keyboard
+            .as_ref()
+            .and_then(|kb| kb.firmware_version().ok());
+        let bootloaders = keywright_core::dfu::find_bootloaders().unwrap_or_default();
+        let bundled = bundled_firmware().map(|p| {
+            let mut v = describe_image(&p);
+            let expected = std::fs::read_to_string(p.with_extension("bin.sha256")).ok().and_then(|t| t.split_whitespace().next().map(str::to_owned));
+            if let (Some(e), Some(a)) = (&expected, v.get("sha256").and_then(|s| s.as_str())) {
+                if e != a {
+                    v = json!({ "ok": false, "path": p.to_string_lossy(), "problems": ["The bundled firmware does not match its checksum. Reinstall Keywright."] });
+                }
+            }
+            v
+        });
+        QString::from(
+            json!({
+                "version": version,
+                "bootloaders": bootloaders,
+                "bundled": bundled,
+                "os": std::env::consts::OS,
+                "running": flash_state().lock().map(|s| s.running).unwrap_or(false),
+            })
+            .to_string()
+            .as_str(),
+        )
+    }
+
+    /// Validate a firmware file the user picked.
+    fn fw_check(&self, path: &QString) -> QString {
+        QString::from(
+            describe_image(std::path::Path::new(&path.to_string()))
+                .to_string()
+                .as_str(),
+        )
+    }
+
+    /// Save the keyboard's configuration to the app's backup folder before flashing.
+    fn fw_backup(&self) -> QString {
+        let result = (|| -> Result<std::path::PathBuf, String> {
+            let kb = self
+                .rust()
+                .keyboard
+                .as_ref()
+                .ok_or("The keyboard is not connected.")?;
+            let backup = keywright_core::backup::Backup::read(kb, &self.rust().layout)
+                .map_err(|e| e.to_string())?;
+            let dir = app_dir()
+                .ok_or("No settings folder available.")?
+                .join("backups");
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let path = dir.join(format!("q6-max-{stamp}.json"));
+            let text = serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())?;
+            std::fs::write(&path, text).map_err(|e| e.to_string())?;
+            Ok(path)
+        })();
+        match result {
+            Ok(p) => QString::from(
+                json!({ "ok": true, "path": p.to_string_lossy() })
+                    .to_string()
+                    .as_str(),
+            ),
+            Err(e) => QString::from(json!({ "ok": false, "error": e }).to_string().as_str()),
+        }
+    }
+
+    /// Start flashing `path` on a background thread. The keyboard must already be in bootloader mode.
+    fn fw_flash(mut self: Pin<&mut Self>, path: &QString) -> bool {
+        {
+            let mut st = flash_state().lock().unwrap();
+            if st.running {
+                return false;
+            }
+            *st = FlashState {
+                running: true,
+                ..Default::default()
+            };
+        }
+        // The keyboard is about to disappear, so let go of it.
+        self.as_mut().rust_mut().keyboard = None;
+        self.as_mut().set_connected(false);
+        self.as_mut().set_status(QString::from(
+            "Flashing firmware. Do not unplug the keyboard.",
+        ));
+
+        let path = path.to_string();
+        std::thread::spawn(move || {
+            let outcome = (|| -> Result<(), String> {
+                let data = std::fs::read(&path)
+                    .map_err(|e| format!("Could not read the firmware file: {e}"))?;
+                let bootloader =
+                    keywright_core::dfu::Bootloader::open_only().map_err(|e| e.to_string())?;
+                bootloader
+                    .flash(&data, |phase, done, total| {
+                        if let Ok(mut st) = flash_state().lock() {
+                            st.phase = Some(phase);
+                            st.done = done;
+                            st.total = total;
+                        }
+                    })
+                    .map_err(|e| e.to_string())
+            })();
+            if let Ok(mut st) = flash_state().lock() {
+                st.running = false;
+                st.finished = true;
+                st.error = outcome.err();
+            }
+        });
+        true
+    }
+
+    fn fw_progress(&self) -> QString {
+        let st = flash_state().lock().map(|s| s.clone()).unwrap_or_default();
+        QString::from(serde_json::to_string(&st).unwrap_or_default().as_str())
+    }
+
+    /// Write a saved backup back to the keyboard. Returns an empty string on success.
+    fn fw_restore(&self, path: &QString) -> QString {
+        let result = (|| -> Result<(), String> {
+            let kb = self
+                .rust()
+                .keyboard
+                .as_ref()
+                .ok_or("The keyboard is not connected.")?;
+            let text = std::fs::read_to_string(path.to_string()).map_err(|e| e.to_string())?;
+            let backup: keywright_core::backup::Backup =
+                serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            backup.restore(kb).map_err(|e| e.to_string())
+        })();
         QString::from(result.err().unwrap_or_default().as_str())
     }
 }

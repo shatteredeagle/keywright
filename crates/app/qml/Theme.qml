@@ -28,6 +28,7 @@ QtObject {
     readonly property color accentSoft: dark ? Qt.rgba(0.48, 0.55, 1, 0.16) : Qt.rgba(0.27, 0.32, 0.9, 0.10)
     readonly property color accentText:   dark ? "#0c1022" : "#ffffff"
     readonly property color ok:         dark ? "#3fd9a0" : "#119e6c"
+    readonly property color danger:     dark ? "#ff6b7d" : "#d03a55"
     readonly property color warn:       dark ? "#f5b94a" : "#b9800f"
 
     // Keycaps
