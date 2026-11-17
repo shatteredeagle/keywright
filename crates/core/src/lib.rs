@@ -80,7 +80,9 @@ impl Keyboard {
     pub fn open(info: &DeviceInfo) -> Result<Self> {
         let api = HidApi::new()?;
         let path = std::ffi::CString::new(info.path.clone()).expect("path has no NUL");
-        Ok(Self { dev: api.open_path(&path)? })
+        Ok(Self {
+            dev: api.open_path(&path)?,
+        })
     }
 
     /// Send one 32-byte request and return the 32-byte reply.
@@ -104,11 +106,14 @@ impl Keyboard {
             self.dev.write(&out)?;
             let deadline = std::time::Instant::now() + TIMEOUT;
             while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
-                let n = self.dev.read_timeout(&mut reply, left.as_millis().max(1) as i32)?;
+                let n = self
+                    .dev
+                    .read_timeout(&mut reply, left.as_millis().max(1) as i32)?;
                 if n == 0 {
                     break;
                 }
-                let echoes = reply[0] == req[0] && (req[0] != CMD_KEYCHRON_RGB || reply[1] == req[1]);
+                let echoes =
+                    reply[0] == req[0] && (req[0] != CMD_KEYCHRON_RGB || reply[1] == req[1]);
                 if echoes || reply[0] == 0xFF {
                     matched = true;
                     break 'attempts;
@@ -133,7 +138,10 @@ impl Keyboard {
     /// receiver can be told apart from another device behind it; `None` on a cable.
     pub fn identity(&self) -> Result<Option<(u16, u16)>> {
         let r = self.xfer(&[CMD_PROTOCOL_VERSION])?;
-        let (vid, pid) = (u16::from_be_bytes([r[3], r[4]]), u16::from_be_bytes([r[5], r[6]]));
+        let (vid, pid) = (
+            u16::from_be_bytes([r[3], r[4]]),
+            u16::from_be_bytes([r[5], r[6]]),
+        );
         Ok((vid != 0 || pid != 0).then_some((vid, pid)))
     }
 
@@ -158,7 +166,10 @@ impl Keyboard {
             let r = self.xfer(&[CMD_KEYMAP_BUFFER, o[0], o[1], n])?;
             bytes.extend_from_slice(&r[4..4 + n as usize]);
         }
-        Ok(bytes.chunks(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect())
+        Ok(bytes
+            .chunks(2)
+            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+            .collect())
     }
 
     /// Read one VIA custom value (`channel`, `value_id`); returns the payload after the echoed ids.
@@ -170,7 +181,8 @@ impl Keyboard {
     /// Write one keycode; the keyboard stores it immediately.
     pub fn set_keycode(&self, layer: u8, row: u8, col: u8, code: u16) -> Result<()> {
         let c = code.to_be_bytes();
-        self.xfer(&[CMD_SET_KEYCODE, layer, row, col, c[0], c[1]]).map(drop)
+        self.xfer(&[CMD_SET_KEYCODE, layer, row, col, c[0], c[1]])
+            .map(drop)
     }
 
     /// Write a VIA custom value to RAM. Call `save_channel` to persist it.
@@ -227,7 +239,10 @@ impl Keyboard {
     /// Keychron firmware version string (VIA protocol 0xA1).
     pub fn firmware_version(&self) -> Result<String> {
         let r = self.xfer(&[CMD_KC_FIRMWARE_VERSION])?;
-        let end = r[1..].iter().position(|&b| b == 0).unwrap_or(REPORT_LEN - 1);
+        let end = r[1..]
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(REPORT_LEN - 1);
         Ok(String::from_utf8_lossy(&r[1..1 + end]).into_owned())
     }
 
@@ -270,7 +285,8 @@ impl Keyboard {
 
     pub fn set_encoder(&self, layer: u8, index: u8, clockwise: bool, code: u16) -> Result<()> {
         let c = code.to_be_bytes();
-        self.xfer(&[CMD_ENCODER_SET, layer, index, clockwise as u8, c[0], c[1]]).map(drop)
+        self.xfer(&[CMD_ENCODER_SET, layer, index, clockwise as u8, c[0], c[1]])
+            .map(drop)
     }
 
     /// Replace one whole layer at once.

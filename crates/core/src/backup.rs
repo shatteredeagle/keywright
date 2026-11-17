@@ -1,6 +1,6 @@
 //! Export and restore everything the app can configure, so firmware can be reflashed safely.
 
-use crate::{layout::Layout, Keyboard, Result, RgbBasic};
+use crate::{Keyboard, Result, RgbBasic, layout::Layout};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

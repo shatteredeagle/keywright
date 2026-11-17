@@ -2,6 +2,8 @@
 name = "kw-probe"
 version = "0.1.0"
 edition = "2024"
+license = "GPL-2.0-or-later"
+repository = "https://github.com/shatteredeagle/keywright"
 
 [dependencies]
 keywright-core = { version = "0.1.0", path = "../core" }

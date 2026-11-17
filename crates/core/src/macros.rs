@@ -13,11 +13,21 @@ const DELAY_SEPARATOR: u8 = b'|';
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum MacroAction {
     /// Typed text. May contain `\n` (Enter) and `\t` (Tab).
-    Text { text: String },
-    Tap { code: u8 },
-    Down { code: u8 },
-    Up { code: u8 },
-    Delay { ms: u32 },
+    Text {
+        text: String,
+    },
+    Tap {
+        code: u8,
+    },
+    Down {
+        code: u8,
+    },
+    Up {
+        code: u8,
+    },
+    Delay {
+        ms: u32,
+    },
 }
 
 pub type Macro = Vec<MacroAction>;
@@ -37,7 +47,9 @@ pub fn decode(buffer: &[u8], count: usize) -> Vec<Macro> {
     let mut text = String::new();
     let flush = |current: &mut Macro, text: &mut String| {
         if !text.is_empty() {
-            current.push(MacroAction::Text { text: std::mem::take(text) });
+            current.push(MacroAction::Text {
+                text: std::mem::take(text),
+            });
         }
     };
     let mut i = 0;
@@ -115,7 +127,10 @@ pub fn encode(macros: &[Macro], size: usize) -> Result<Vec<u8>, MacroError> {
     }
     // The last byte of the buffer must stay zero, or the firmware ignores every macro.
     if out.len() >= size {
-        return Err(MacroError::TooLong { needed: out.len() + 1, room: size });
+        return Err(MacroError::TooLong {
+            needed: out.len() + 1,
+            room: size,
+        });
     }
     out.resize(size, 0);
     Ok(out)
@@ -130,7 +145,12 @@ mod tests {
         let mut buf = b"\n/hideout\n\0".to_vec();
         buf.resize(64, 0);
         let m = decode(&buf, 16);
-        assert_eq!(m[0], vec![MacroAction::Text { text: "\n/hideout\n".into() }]);
+        assert_eq!(
+            m[0],
+            vec![MacroAction::Text {
+                text: "\n/hideout\n".into()
+            }]
+        );
         assert!(m[1].is_empty() && m.len() == 16);
     }
 
@@ -139,7 +159,9 @@ mod tests {
         let macros = vec![
             vec![
                 MacroAction::Tap { code: 0x28 },
-                MacroAction::Text { text: "/dnd".into() },
+                MacroAction::Text {
+                    text: "/dnd".into(),
+                },
                 MacroAction::Delay { ms: 250 },
                 MacroAction::Down { code: 0xE1 },
                 MacroAction::Tap { code: 0x04 },
@@ -158,7 +180,9 @@ mod tests {
 
     #[test]
     fn rejects_overflow_and_odd_text() {
-        let big = vec![vec![MacroAction::Text { text: "x".repeat(20) }]];
+        let big = vec![vec![MacroAction::Text {
+            text: "x".repeat(20),
+        }]];
         assert!(matches!(encode(&big, 16), Err(MacroError::TooLong { .. })));
         let odd = vec![vec![MacroAction::Text { text: "é".into() }]];
         assert_eq!(encode(&odd, 64), Err(MacroError::BadText('é')));

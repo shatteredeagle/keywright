@@ -1,4 +1,9 @@
+target/
+# Local working files: configuration backups hold personal keymaps and macros.
+backups/
 firmware/keychron-qmk/
+firmware/out/
 firmware/*.log
-firmware/out/*.bin
-target
+firmware/ccmd.txt
+*.log
+.qmlls.ini

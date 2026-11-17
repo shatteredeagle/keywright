@@ -59,7 +59,9 @@ fn find_effects(v: &Value) -> Option<Vec<(String, u8)>> {
             if is_effect {
                 return o.get("options").and_then(Value::as_array).map(|opts| {
                     opts.iter()
-                        .filter_map(|p| Some((p.get(0)?.as_str()?.to_string(), p.get(1)?.as_u64()? as u8)))
+                        .filter_map(|p| {
+                            Some((p.get(0)?.as_str()?.to_string(), p.get(1)?.as_u64()? as u8))
+                        })
                         .collect()
                 });
             }
@@ -93,13 +95,26 @@ impl Layout {
                     Value::String(s) => {
                         let mut lines = s.split('\n');
                         let mut pos = lines.next().unwrap_or("").split(',');
-                        let (Some(r), Some(c)) = (pos.next(), pos.next()) else { continue };
-                        let (Ok(row_i), Ok(col_i)) = (r.trim().parse(), c.trim().parse()) else { continue };
+                        let (Some(r), Some(c)) = (pos.next(), pos.next()) else {
+                            continue;
+                        };
+                        let (Ok(row_i), Ok(col_i)) = (r.trim().parse(), c.trim().parse()) else {
+                            continue;
+                        };
                         let encoder = lines
-                            .last()
+                            .next_back()
                             .and_then(|l| l.strip_prefix('e'))
                             .and_then(|n| n.parse().ok());
-                        keys.push(Key { row: row_i, col: col_i, x, y, w, h, color: color.clone(), encoder });
+                        keys.push(Key {
+                            row: row_i,
+                            col: col_i,
+                            x,
+                            y,
+                            w,
+                            h,
+                            color: color.clone(),
+                            encoder,
+                        });
                         x += w;
                         (w, h) = (1.0, 1.0);
                     }
@@ -109,17 +124,25 @@ impl Layout {
             y += 1.0;
         }
         let rgb_effects = find_effects(&def.menus).unwrap_or_default();
-        Ok(Layout { name: def.name, rows: def.matrix.rows, cols: def.matrix.cols, keys, rgb_effects })
+        Ok(Layout {
+            name: def.name,
+            rows: def.matrix.rows,
+            cols: def.matrix.cols,
+            keys,
+            rgb_effects,
+        })
     }
 
     /// The bundled Q6 Max ANSI (knob) definition from Keychron's firmware repo.
     pub fn q6_max_ansi() -> Self {
-        Self::parse(include_str!("../data/q6_max_ansi_encoder.json")).expect("bundled layout is valid")
+        Self::parse(include_str!("../data/q6_max_ansi_encoder.json"))
+            .expect("bundled layout is valid")
     }
 
     pub fn size(&self) -> (f32, f32) {
-        let r = self.keys.iter().fold((0.0f32, 0.0f32), |a, k| (a.0.max(k.x + k.w), a.1.max(k.y + k.h)));
-        r
+        self.keys.iter().fold((0.0f32, 0.0f32), |a, k| {
+            (a.0.max(k.x + k.w), a.1.max(k.y + k.h))
+        })
     }
 }
 
@@ -133,7 +156,10 @@ mod tests {
         assert_eq!((l.rows, l.cols), (6, 20));
         assert_eq!(l.keys.len(), 109);
         let (w, h) = l.size();
-        assert!((w - 22.5).abs() < 0.01 && (h - 6.25).abs() < 0.01, "{w}x{h}");
+        assert!(
+            (w - 22.5).abs() < 0.01 && (h - 6.25).abs() < 0.01,
+            "{w}x{h}"
+        );
         assert!(l.keys.iter().any(|k| k.encoder == Some(0)));
         assert_eq!(l.rgb_effects.len(), 23);
         assert_eq!(l.rgb_effects[0], ("None".to_string(), 0));

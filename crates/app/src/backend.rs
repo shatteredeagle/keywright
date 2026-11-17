@@ -132,17 +132,18 @@ impl qobject::Backend {
                     rust.led_of = vec![None; rust.layout.keys.len()];
                     rust.led_count = 0;
                     rust.extended_rgb = false;
-                    if let Ok(count) = kb.kc_rgb_led_count() {
-                        if let Ok(map) = kb.kc_rgb_led_indices(rust.layout.rows, rust.layout.cols) {
-                            rust.led_of = rust
-                                .layout
-                                .keys
-                                .iter()
-                                .map(|k| map[k.row as usize][k.col as usize])
-                                .collect();
-                            rust.led_count = count;
-                            rust.extended_rgb = true;
-                        }
+                    if let (Ok(count), Ok(map)) = (
+                        kb.kc_rgb_led_count(),
+                        kb.kc_rgb_led_indices(rust.layout.rows, rust.layout.cols),
+                    ) {
+                        rust.led_of = rust
+                            .layout
+                            .keys
+                            .iter()
+                            .map(|k| map[k.row as usize][k.col as usize])
+                            .collect();
+                        rust.led_count = count;
+                        rust.extended_rgb = true;
                     }
                     rust.encoders = (0..layers.len() as u8)
                         .map(|l| Ok([kb.encoder(l, 0, false)?, kb.encoder(l, 0, true)?]))
@@ -152,7 +153,9 @@ impl qobject::Backend {
                     rust.layers = layers;
                     self.as_mut().set_connected(true);
                     let how = if wireless { "2.4 GHz" } else { "USB cable" };
-                    self.set_status(QString::from(format!("Keychron Q6 Max connected ({how})").as_str()));
+                    self.set_status(QString::from(
+                        format!("Keychron Q6 Max connected ({how})").as_str(),
+                    ));
                     return;
                 }
                 Err(e) => last_error = e.to_string(),
@@ -190,7 +193,11 @@ impl qobject::Backend {
         let encoders: Vec<_> = r
             .encoders
             .iter()
-            .map(|e| e.iter().map(|&c| json!({ "code": c, "label": keycode::name(c) })).collect::<Vec<_>>())
+            .map(|e| {
+                e.iter()
+                    .map(|&c| json!({ "code": c, "label": keycode::name(c) }))
+                    .collect::<Vec<_>>()
+            })
             .collect();
         QString::from(
             json!({ "width": w, "height": h, "layers": layers, "encoders": encoders })
@@ -231,17 +238,27 @@ impl qobject::Backend {
     }
 }
 
+/// Where the saved appearance lives: the platform's per-user settings folder.
 fn theme_file() -> Option<std::path::PathBuf> {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))?;
+    use std::path::PathBuf;
+    let base = if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    } else if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+    }?;
     Some(base.join("keywright").join("theme"))
 }
 
 impl qobject::Backend {
     /// Saved appearance: "system", "light" or "dark".
     fn theme(&self) -> QString {
-        let saved = theme_file().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+        let saved = theme_file()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .unwrap_or_default();
         let mode = match saved.trim() {
             m @ ("light" | "dark") => m,
             _ => "system",
@@ -262,8 +279,15 @@ impl qobject::Backend {
     fn rgb(&self) -> QString {
         let r = self.rust();
         let state = r.keyboard.as_ref().and_then(|kb| kb.rgb_basic().ok());
-        let Some(v) = state else { return QString::from("null") };
-        let effects: Vec<_> = r.layout.rgb_effects.iter().map(|(n, id)| json!({ "name": n, "id": id })).collect();
+        let Some(v) = state else {
+            return QString::from("null");
+        };
+        let effects: Vec<_> = r
+            .layout
+            .rgb_effects
+            .iter()
+            .map(|(n, id)| json!({ "name": n, "id": id }))
+            .collect();
         QString::from(
             json!({
                 "brightness": v.brightness, "effect": v.effect, "speed": v.speed,
@@ -282,20 +306,27 @@ impl qobject::Backend {
             _ => return false,
         };
         let byte = value.clamp(0, 255) as u8;
-        self.rust().keyboard.as_ref().is_some_and(|kb| kb.custom_set(keywright_core::RGB_CHANNEL, id, &[byte]).is_ok())
+        self.rust().keyboard.as_ref().is_some_and(|kb| {
+            kb.custom_set(keywright_core::RGB_CHANNEL, id, &[byte])
+                .is_ok()
+        })
     }
 
     fn set_rgb_color(&self, hue: i32, saturation: i32) -> bool {
         let data = [hue.clamp(0, 255) as u8, saturation.clamp(0, 255) as u8];
-        self.rust().keyboard.as_ref().is_some_and(|kb| kb.custom_set(keywright_core::RGB_CHANNEL, 4, &data).is_ok())
+        self.rust()
+            .keyboard
+            .as_ref()
+            .is_some_and(|kb| kb.custom_set(keywright_core::RGB_CHANNEL, 4, &data).is_ok())
     }
 
     fn save_rgb(&self) -> bool {
         // Keychron firmware persists one changed value per save, so rewrite and save each value.
-        self.rust()
-            .keyboard
-            .as_ref()
-            .is_some_and(|kb| kb.rgb_basic().and_then(|v| kb.set_rgb_basic(&v, true)).is_ok())
+        self.rust().keyboard.as_ref().is_some_and(|kb| {
+            kb.rgb_basic()
+                .and_then(|v| kb.set_rgb_basic(&v, true))
+                .is_ok()
+        })
     }
 }
 
@@ -322,7 +353,9 @@ impl qobject::Backend {
     /// Everything the extended lighting pages need, as JSON; "null" when the keyboard lacks it.
     fn kc_state(&self) -> QString {
         let r = self.rust();
-        let Some(kb) = r.keyboard.as_ref().filter(|_| r.extended_rgb) else { return QString::from("null") };
+        let Some(kb) = r.keyboard.as_ref().filter(|_| r.extended_rgb) else {
+            return QString::from("null");
+        };
         let read = || -> keywright_core::Result<serde_json::Value> {
             let info = kb.kc_rgb_mixed_info()?;
             let effects: Vec<_> = (0..info.regions)
@@ -349,9 +382,15 @@ impl qobject::Backend {
     fn kc_apply(&self, op: &QString, args: &QString) -> bool {
         use keywright_core::kcrgb::{Hsv, RegionEffect};
         let r = self.rust();
-        let Some(kb) = r.keyboard.as_ref().filter(|_| r.extended_rgb) else { return false };
+        let Some(kb) = r.keyboard.as_ref().filter(|_| r.extended_rgb) else {
+            return false;
+        };
         let a: KcArgs = serde_json::from_str(&args.to_string()).unwrap_or_default();
-        let hsv = Hsv { h: a.h, s: a.s, v: a.v };
+        let hsv = Hsv {
+            h: a.h,
+            s: a.s,
+            v: a.v,
+        };
         let result = match op.to_string().as_str() {
             "color" => kb.kc_rgb_set_per_key_colors(a.led, &[hsv]),
             "fill" => kb.kc_rgb_set_per_key_colors(0, &vec![hsv; r.led_count as usize]),
@@ -368,7 +407,13 @@ impl qobject::Backend {
             "regionEffect" => (|| {
                 let info = kb.kc_rgb_mixed_info()?;
                 let mut list = kb.kc_rgb_region_effects(a.region, info.effects_per_region)?;
-                let step = RegionEffect { effect: a.effect, hue: a.hue, sat: a.sat, speed: a.speed, time: a.time };
+                let step = RegionEffect {
+                    effect: a.effect,
+                    hue: a.hue,
+                    sat: a.sat,
+                    speed: a.speed,
+                    time: a.time,
+                };
                 match list.get_mut(a.index as usize) {
                     Some(slot) => *slot = step,
                     None => return Ok(()),
@@ -390,7 +435,9 @@ impl qobject::Backend {
 impl qobject::Backend {
     fn set_encoder(mut self: Pin<&mut Self>, layer: i32, clockwise: bool, code: i32) -> bool {
         let written = match &self.rust().keyboard {
-            Some(kb) => kb.set_encoder(layer as u8, 0, clockwise, code as u16).is_ok(),
+            Some(kb) => kb
+                .set_encoder(layer as u8, 0, clockwise, code as u16)
+                .is_ok(),
             None => false,
         };
         if written {
@@ -408,12 +455,16 @@ impl qobject::Backend {
     /// All macro slots plus buffer usage, as JSON; "null" when the keyboard can't be read.
     fn macros(&self) -> QString {
         use keywright_core::macros;
-        let Some(kb) = self.rust().keyboard.as_ref() else { return QString::from("null") };
+        let Some(kb) = self.rust().keyboard.as_ref() else {
+            return QString::from("null");
+        };
         let read = || -> keywright_core::Result<serde_json::Value> {
             let count = kb.macro_count()? as usize;
             let buffer = kb.read_macro_buffer()?;
             let list = macros::decode(&buffer, count);
-            let used = macros::encode(&list, buffer.len()).map(|b| b.iter().rposition(|&x| x != 0).map_or(0, |i| i + 1)).unwrap_or(0);
+            let used = macros::encode(&list, buffer.len())
+                .map(|b| b.iter().rposition(|&x| x != 0).map_or(0, |i| i + 1))
+                .unwrap_or(0);
             Ok(json!({ "macros": list, "size": buffer.len(), "used": used }))
         };
         match read() {
@@ -425,7 +476,9 @@ impl qobject::Backend {
     /// Write all macros. Returns an empty string on success, otherwise a message to show.
     fn set_macros(&self, json: &QString) -> QString {
         use keywright_core::macros::{self, Macro};
-        let Some(kb) = self.rust().keyboard.as_ref() else { return QString::from("No keyboard connected.") };
+        let Some(kb) = self.rust().keyboard.as_ref() else {
+            return QString::from("No keyboard connected.");
+        };
         let list: Vec<Macro> = match serde_json::from_str(&json.to_string()) {
             Ok(l) => l,
             Err(e) => return QString::from(format!("Could not read the macros: {e}").as_str()),

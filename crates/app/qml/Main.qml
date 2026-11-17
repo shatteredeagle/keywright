@@ -65,6 +65,7 @@ ApplicationWindow {
         if (forced !== "") themeMode = forced;
         Theme.mode = themeMode;
         reload();
+        if (backend.env("KEYWRIGHT_SELFTEST") !== "") { console.log("keywright-qml-ready"); Qt.callLater(Qt.quit); }
         const sel = backend.env("KEYWRIGHT_SELECT");
         if (sel !== "") selected = parseInt(sel);
         const pg = backend.env("KEYWRIGHT_PAGE");

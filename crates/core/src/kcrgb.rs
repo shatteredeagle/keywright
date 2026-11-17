@@ -75,7 +75,9 @@ impl Keyboard {
         (0..rows)
             .map(|row| {
                 let r = self.kc_rgb(LED_INDEX, &[row, m[0], m[1], m[2]])?;
-                Ok((0..cols as usize).map(|c| Some(r[3 + c]).filter(|&i| i != 0xFF)).collect())
+                Ok((0..cols as usize)
+                    .map(|c| Some(r[3 + c]).filter(|&i| i != 0xFF))
+                    .collect())
             })
             .collect()
     }
@@ -93,7 +95,11 @@ impl Keyboard {
         while out.len() < count as usize {
             let n = (count as usize - out.len()).min(9) as u8;
             let r = self.kc_rgb(PK_GET_COLOR, &[out.len() as u8, n])?;
-            out.extend((0..n as usize).map(|i| Hsv { h: r[3 + i * 3], s: r[4 + i * 3], v: r[5 + i * 3] }));
+            out.extend((0..n as usize).map(|i| Hsv {
+                h: r[3 + i * 3],
+                s: r[4 + i * 3],
+                v: r[5 + i * 3],
+            }));
         }
         Ok(out)
     }
@@ -111,7 +117,10 @@ impl Keyboard {
 
     pub fn kc_rgb_mixed_info(&self) -> Result<MixedInfo> {
         let r = self.kc_rgb(MIXED_INFO, &[])?;
-        Ok(MixedInfo { regions: r[3], effects_per_region: r[4] })
+        Ok(MixedInfo {
+            regions: r[3],
+            effects_per_region: r[4],
+        })
     }
 
     /// Which region each LED belongs to.
@@ -167,11 +176,23 @@ impl Keyboard {
 
     pub fn kc_rgb_indicators(&self) -> Result<Indicators> {
         let r = self.kc_rgb(GET_INDICATORS, &[])?;
-        Ok(Indicators { available: r[3], disabled: r[4], color: Hsv { h: r[5], s: r[6], v: r[7] } })
+        Ok(Indicators {
+            available: r[3],
+            disabled: r[4],
+            color: Hsv {
+                h: r[5],
+                s: r[6],
+                v: r[7],
+            },
+        })
     }
 
     pub fn kc_rgb_set_indicators(&self, i: &Indicators) -> Result<()> {
-        self.kc_rgb(SET_INDICATORS, &[i.disabled, i.color.h, i.color.s, i.color.v]).map(drop)
+        self.kc_rgb(
+            SET_INDICATORS,
+            &[i.disabled, i.color.h, i.color.s, i.color.v],
+        )
+        .map(drop)
     }
 
     /// Persist per-key colours, regions, effect lists and indicator settings.

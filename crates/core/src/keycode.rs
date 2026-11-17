@@ -2,8 +2,8 @@
 
 /// Keychron custom keycodes (`customKeycodes` in the VIA definition), in order from 0x7E00.
 pub const KEYCHRON_SHORT: [&str; 16] = [
-    "LOpt", "ROpt", "LCmd", "RCmd", "MCtl", "LPad", "Task", "File",
-    "SShot", "Cortana", "Siri", "BT1", "BT2", "BT3", "2.4G", "Batt",
+    "LOpt", "ROpt", "LCmd", "RCmd", "MCtl", "LPad", "Task", "File", "SShot", "Cortana", "Siri",
+    "BT1", "BT2", "BT3", "2.4G", "Batt",
 ];
 
 pub fn name(code: u16) -> String {
@@ -90,6 +90,29 @@ pub fn name(code: u16) -> String {
     }
 }
 
+/// Pickable keycodes grouped for the key picker: `(group, code, label)`.
+pub fn catalog() -> Vec<(&'static str, u16, String)> {
+    let group = |c: u16| match c {
+        0x04..=0x1D => "Letters",
+        0x1E..=0x27 => "Numbers",
+        0x28..=0x38 | 0x65 => "Punctuation & editing",
+        0x39 | 0xE0..=0xE7 => "Modifiers & locks",
+        0x3A..=0x45 => "Function",
+        0x46..=0x52 => "Navigation",
+        0x53..=0x63 => "Keypad",
+        _ => "Media",
+    };
+    let macros = (0..16u16).map(|n| ("Macros", 0x7700 + n, format!("Macro {n}")));
+    (0x04u16..=0xE7)
+        .filter(|c| {
+            !(0x66..=0xA7).contains(c) && !(0xB0..=0xBC).contains(c) && !(0xBF..=0xDF).contains(c)
+        })
+        .map(|c| (group(c), c, name(c)))
+        .filter(|(_, c, n)| *n != format!("{c:04X}") && !n.is_empty())
+        .chain(macros)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::name;
@@ -105,25 +128,4 @@ mod tests {
         assert_eq!(name(0x7E00), "LOpt");
         assert_eq!(name(0x5221), "Fn1");
     }
-}
-
-/// Pickable keycodes grouped for the key picker: `(group, code, label)`.
-pub fn catalog() -> Vec<(&'static str, u16, String)> {
-    let group = |c: u16| match c {
-        0x04..=0x1D => "Letters",
-        0x1E..=0x27 => "Numbers",
-        0x28..=0x38 | 0x65 => "Punctuation & editing",
-        0x39 | 0xE0..=0xE7 => "Modifiers & locks",
-        0x3A..=0x45 => "Function",
-        0x46..=0x52 => "Navigation",
-        0x53..=0x63 => "Keypad",
-        _ => "Media",
-    };
-    let macros = (0..16u16).map(|n| ("Macros", 0x7700 + n, format!("Macro {n}")));
-    (0x04u16..=0xE7)
-        .filter(|c| !(0x66..=0xA7).contains(c) && !(0xB0..=0xBC).contains(c) && !(0xBF..=0xDF).contains(c))
-        .map(|c| (group(c), c, name(c)))
-        .filter(|(_, c, n)| *n != format!("{c:04X}") && !n.is_empty())
-        .chain(macros)
-        .collect()
 }
