@@ -1,5 +1,11 @@
 //! QMK keycode to display name, covering the basic range plus Keychron/QMK specials.
 
+/// Keychron custom keycodes (`customKeycodes` in the VIA definition), in order from 0x7E00.
+pub const KEYCHRON_SHORT: [&str; 16] = [
+    "LOpt", "ROpt", "LCmd", "RCmd", "MCtl", "LPad", "Task", "File",
+    "SShot", "Cortana", "Siri", "BT1", "BT2", "BT3", "2.4G", "Batt",
+];
+
 pub fn name(code: u16) -> String {
     match code {
         0x0000 => String::new(),
@@ -64,6 +70,22 @@ pub fn name(code: u16) -> String {
         0x00E5 => "RShift".into(),
         0x00E6 => "RAlt".into(),
         0x00E7 => "RWin".into(),
+        0x0068..=0x0073 => format!("F{}", code - 0x68 + 13),
+        0x7013 => "NKRO".into(),
+        0x7700..=0x777F => format!("Macro {}", code - 0x7700),
+        0x7820 => "RGB".into(),
+        0x7821 => "Mode+".into(),
+        0x7822 => "Mode-".into(),
+        0x7823 => "Hue+".into(),
+        0x7824 => "Hue-".into(),
+        0x7825 => "Sat+".into(),
+        0x7826 => "Sat-".into(),
+        0x7827 => "Light+".into(),
+        0x7828 => "Light-".into(),
+        0x7829 => "Speed+".into(),
+        0x782A => "Speed-".into(),
+        0x5220..=0x523F => format!("Fn{}", code - 0x5220),
+        0x7E00..=0x7E0F => KEYCHRON_SHORT[(code - 0x7E00) as usize].into(),
         _ => format!("{code:04X}"),
     }
 }
@@ -80,6 +102,26 @@ mod tests {
         assert_eq!(name(0x003A), "F1");
         assert_eq!(name(0x0045), "F12");
         assert_eq!(name(0x0059), "KP 1");
-        assert_eq!(name(0x7E00), "7E00");
+        assert_eq!(name(0x7E00), "LOpt");
+        assert_eq!(name(0x5221), "Fn1");
     }
+}
+
+/// Pickable keycodes grouped for the key picker: `(group, code, label)`.
+pub fn catalog() -> Vec<(&'static str, u16, String)> {
+    let group = |c: u16| match c {
+        0x04..=0x1D => "Letters",
+        0x1E..=0x27 => "Numbers",
+        0x28..=0x38 | 0x65 => "Punctuation & editing",
+        0x39 | 0xE0..=0xE7 => "Modifiers & locks",
+        0x3A..=0x45 => "Function",
+        0x46..=0x52 => "Navigation",
+        0x53..=0x63 => "Keypad",
+        _ => "Media",
+    };
+    (0x04u16..=0xE7)
+        .filter(|c| !(0x66..=0xA7).contains(c) && !(0xB0..=0xBC).contains(c) && !(0xBF..=0xDF).contains(c))
+        .map(|c| (group(c), c, name(c)))
+        .filter(|(_, c, n)| *n != format!("{c:04X}") && !n.is_empty())
+        .collect()
 }
