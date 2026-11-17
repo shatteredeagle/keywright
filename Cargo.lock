@@ -354,6 +354,7 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "keywright-core",
+ "serde",
  "serde_json",
 ]
 

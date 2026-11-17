@@ -8,6 +8,9 @@ Item {
     property real kbHeight: 6.25
     property int selected: -1
     property bool interactive: true
+    // Optional per-key cap colours (index-aligned with `keys`); empty entries use the theme colour.
+    property var fills: []
+    property bool showLabels: true
     signal keyClicked(int index)
 
     readonly property real unit: Math.min(width / kbWidth, height / kbHeight)
@@ -29,14 +32,18 @@ Item {
             width: modelData.w * root.unit - 3
             height: modelData.h * root.unit - 3
             radius: Math.max(4, root.unit * 0.12)
-            color: index === root.selected ? pal.highlight
+            readonly property var fill: root.fills.length > index ? root.fills[index] : null
+            readonly property color capColor: fill ? fill : base
+            color: fill ? (mouse.containsMouse && root.interactive ? Qt.lighter(capColor, 1.1) : capColor)
+                 : index === root.selected ? pal.highlight
                  : mouse.containsMouse && root.interactive ? Qt.lighter(base, 1.12)
                  : base
             readonly property color base: root.dark
                 ? (mod ? Qt.rgba(0.20, 0.21, 0.24, 1) : Qt.rgba(0.27, 0.28, 0.32, 1))
                 : (mod ? Qt.rgba(0.80, 0.81, 0.84, 1) : Qt.rgba(0.93, 0.94, 0.95, 1))
-            border.width: 1
-            border.color: root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.16)
+            border.width: index === root.selected && fill ? 3 : 1
+            border.color: index === root.selected && fill ? pal.highlight
+                        : root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.16)
             Behavior on color { ColorAnimation { duration: 90 } }
 
             Text {
@@ -49,8 +56,9 @@ Item {
                 fontSizeMode: Text.Fit
                 minimumPixelSize: 7
                 font.pixelSize: Math.max(9, root.unit * 0.3)
-                color: index === root.selected ? pal.highlightedText : pal.windowText
-                opacity: cap.modelData.label === "" && !cap.isKnob ? 0 : 1
+                color: cap.fill ? (cap.fill.hslLightness > 0.55 ? "#111111" : "#ffffff")
+                     : index === root.selected ? pal.highlightedText : pal.windowText
+                opacity: !root.showLabels || (cap.modelData.label === "" && !cap.isKnob) ? 0 : 1
             }
             MouseArea {
                 id: mouse

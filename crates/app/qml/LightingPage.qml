@@ -10,6 +10,10 @@ Item {
     property var state: null   // {brightness, effect, speed, hue, saturation, effects:[{name,id}]}
     property bool dirty: false
     property bool saved: false
+    property var kc: null            // extended lighting state, null when unsupported
+    property var keys: []
+    property real kbWidth: 22.5
+    property real kbHeight: 6.25
     property int hueVal: 0
     property int satVal: 0
 
@@ -17,11 +21,17 @@ Item {
         const raw = backend.rgb();
         state = raw === "null" ? null : JSON.parse(raw);
         if (state) { hueVal = state.hue; satVal = state.saturation; }
+        const k = backend.kc_state();
+        kc = k === "null" ? null : JSON.parse(k);
         dirty = false;
         saved = false;
     }
     onVisibleChanged: if (visible && backend.connected) refresh()
-    Component.onCompleted: if (backend.connected) refresh()
+    Component.onCompleted: {
+        if (backend.connected) refresh();
+        const t = backend.env("KEYWRIGHT_TAB");
+        if (t !== "") tabs.currentIndex = parseInt(t);
+    }
 
     function put(field, value) {
         if (backend.set_rgb(field, value)) { state[field] = value; dirty = true; saved = false; }
@@ -53,6 +63,26 @@ Item {
 
     readonly property color swatch: Qt.hsva(hueVal / 255, satVal / 255, 1, 1)
 
+    // Built-in effects, plus the two Keychron ones when the keyboard supports them.
+    readonly property var allEffects: state ? (kc ? state.effects.concat([{ name: "Per-key RGB", id: 23 }, { name: "Mixed RGB", id: 24 }]) : state.effects) : []
+    function useEffect(id) { put("effect", id); }
+
+    TabBar {
+        id: tabs
+        visible: root.state !== null
+        x: 20; y: 12
+        TabButton { text: "Backlight"; width: implicitWidth }
+        TabButton { text: "Per-key"; width: implicitWidth; enabled: root.kc !== null }
+        TabButton { text: "Regions"; width: implicitWidth; enabled: root.kc !== null }
+        TabButton { text: "Indicators"; width: implicitWidth; enabled: root.kc !== null }
+    }
+
+    StackLayout {
+        visible: root.state !== null
+        anchors { left: parent.left; right: parent.right; top: tabs.bottom; bottom: parent.bottom }
+        currentIndex: tabs.currentIndex
+
+        Item {
     ColumnLayout {
         visible: root.state !== null
         width: Math.min(parent.width - 40, 720)
@@ -66,9 +96,9 @@ Item {
             Label { text: "Effect"; Layout.preferredWidth: 110; opacity: 0.8 }
             ComboBox {
                 Layout.fillWidth: true
-                model: root.state ? root.state.effects.map(e => e.name) : []
-                currentIndex: root.state ? root.state.effects.findIndex(e => e.id === root.state.effect) : -1
-                onActivated: i => root.put("effect", root.state.effects[i].id)
+                model: root.allEffects.map(e => e.name)
+                currentIndex: root.state ? root.allEffects.findIndex(e => e.id === root.state.effect) : -1
+                onActivated: i => root.put("effect", root.allEffects[i].id)
             }
         }
 
@@ -151,6 +181,20 @@ Item {
                 opacity: 0.7
             }
         }
+    }
+
+        }
+
+        PerKeyPage {
+            backend: root.backend; pal: root.pal; keys: root.keys; kbWidth: root.kbWidth; kbHeight: root.kbHeight; kc: root.kc
+            onShowEffect: root.useEffect(23)
+        }
+        RegionsPage {
+            backend: root.backend; pal: root.pal; keys: root.keys; kbWidth: root.kbWidth; kbHeight: root.kbHeight; kc: root.kc
+            effects: root.state ? root.state.effects : []
+            onShowEffect: root.useEffect(24)
+        }
+        IndicatorsPage { backend: root.backend; pal: root.pal; kc: root.kc }
     }
 
     Label {

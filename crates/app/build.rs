@@ -7,6 +7,10 @@ fn main() {
         "qml/KeyPicker.qml",
         "qml/ShortcutsPage.qml",
         "qml/LightingPage.qml",
+        "qml/HsvPicker.qml",
+        "qml/PerKeyPage.qml",
+        "qml/RegionsPage.qml",
+        "qml/IndicatorsPage.qml",
     ]))
     .file("src/backend.rs")
     .build();

@@ -46,6 +46,12 @@ pub mod qobject {
         fn save_rgb(self: &Backend) -> bool;
 
         #[qinvokable]
+        fn kc_state(self: &Backend) -> QString;
+
+        #[qinvokable]
+        fn kc_apply(self: &Backend, op: &QString, args: &QString) -> bool;
+
+        #[qinvokable]
         fn theme(self: &Backend) -> QString;
 
         #[qinvokable]
@@ -59,6 +65,10 @@ pub struct BackendRust {
     keyboard: Option<Keyboard>,
     layout: Layout,
     layers: Vec<Vec<u16>>,
+    /// LED index for each key of the layout, when the keyboard supports Keychron's extended RGB.
+    led_of: Vec<Option<u8>>,
+    led_count: u8,
+    extended_rgb: bool,
 }
 
 impl Default for BackendRust {
@@ -69,6 +79,9 @@ impl Default for BackendRust {
             keyboard: None,
             layout: Layout::q6_max_ansi(),
             layers: Vec::new(),
+            led_of: Vec::new(),
+            led_count: 0,
+            extended_rgb: false,
         }
     }
 }
@@ -104,6 +117,21 @@ impl qobject::Backend {
             match attempt {
                 Ok((kb, layers)) => {
                     let mut rust = self.as_mut().rust_mut();
+                    rust.led_of = vec![None; rust.layout.keys.len()];
+                    rust.led_count = 0;
+                    rust.extended_rgb = false;
+                    if let Ok(count) = kb.kc_rgb_led_count() {
+                        if let Ok(map) = kb.kc_rgb_led_indices(rust.layout.rows, rust.layout.cols) {
+                            rust.led_of = rust
+                                .layout
+                                .keys
+                                .iter()
+                                .map(|k| map[k.row as usize][k.col as usize])
+                                .collect();
+                            rust.led_count = count;
+                            rust.extended_rgb = true;
+                        }
+                    }
                     rust.keyboard = Some(kb);
                     rust.layers = layers;
                     self.as_mut().set_connected(true);
@@ -130,12 +158,13 @@ impl qobject::Backend {
                 r.layout
                     .keys
                     .iter()
-                    .map(|k| {
+                    .enumerate()
+                    .map(|(ki, k)| {
                         let code = codes[k.row as usize * cols + k.col as usize];
                         json!({
                             "x": k.x, "y": k.y, "w": k.w, "h": k.h,
                             "row": k.row, "col": k.col, "color": k.color,
-                            "encoder": k.encoder, "code": code, "label": keycode::name(code),
+                            "encoder": k.encoder, "code": code, "label": keycode::name(code), "led": r.led_of.get(ki).copied().flatten(),
                         })
                     })
                     .collect::<Vec<_>>()
@@ -246,5 +275,93 @@ impl qobject::Backend {
             .keyboard
             .as_ref()
             .is_some_and(|kb| kb.rgb_basic().and_then(|v| kb.set_rgb_basic(&v, true)).is_ok())
+    }
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct KcArgs {
+    led: u8,
+    leds: Vec<u8>,
+    region: u8,
+    index: u8,
+    kind: u8,
+    h: u8,
+    s: u8,
+    v: u8,
+    effect: u8,
+    hue: u8,
+    sat: u8,
+    speed: u8,
+    time: u32,
+    disabled: u8,
+}
+
+impl qobject::Backend {
+    /// Everything the extended lighting pages need, as JSON; "null" when the keyboard lacks it.
+    fn kc_state(&self) -> QString {
+        let r = self.rust();
+        let Some(kb) = r.keyboard.as_ref().filter(|_| r.extended_rgb) else { return QString::from("null") };
+        let read = || -> keywright_core::Result<serde_json::Value> {
+            let info = kb.kc_rgb_mixed_info()?;
+            let effects: Vec<_> = (0..info.regions)
+                .map(|reg| kb.kc_rgb_region_effects(reg, info.effects_per_region))
+                .collect::<keywright_core::Result<_>>()?;
+            Ok(json!({
+                "ledCount": r.led_count,
+                "perKeyType": kb.kc_rgb_per_key_type()?,
+                "colors": kb.kc_rgb_per_key_colors(r.led_count)?,
+                "regions": kb.kc_rgb_regions(r.led_count)?,
+                "regionCount": info.regions,
+                "stepsPerRegion": info.effects_per_region,
+                "regionEffects": effects,
+                "indicators": kb.kc_rgb_indicators()?,
+            }))
+        };
+        match read() {
+            Ok(v) => QString::from(v.to_string().as_str()),
+            Err(_) => QString::from("null"),
+        }
+    }
+
+    /// Apply one extended-lighting change. `args` is a JSON object; see `KcArgs` for its fields.
+    fn kc_apply(&self, op: &QString, args: &QString) -> bool {
+        use keywright_core::kcrgb::{Hsv, RegionEffect};
+        let r = self.rust();
+        let Some(kb) = r.keyboard.as_ref().filter(|_| r.extended_rgb) else { return false };
+        let a: KcArgs = serde_json::from_str(&args.to_string()).unwrap_or_default();
+        let hsv = Hsv { h: a.h, s: a.s, v: a.v };
+        let result = match op.to_string().as_str() {
+            "color" => kb.kc_rgb_set_per_key_colors(a.led, &[hsv]),
+            "fill" => kb.kc_rgb_set_per_key_colors(0, &vec![hsv; r.led_count as usize]),
+            "perKeyType" => kb.kc_rgb_set_per_key_type(a.kind),
+            "region" => (|| {
+                let mut regions = kb.kc_rgb_regions(r.led_count)?;
+                for &led in &a.leds {
+                    if let Some(slot) = regions.get_mut(led as usize) {
+                        *slot = a.region;
+                    }
+                }
+                kb.kc_rgb_set_regions(&regions)
+            })(),
+            "regionEffect" => (|| {
+                let info = kb.kc_rgb_mixed_info()?;
+                let mut list = kb.kc_rgb_region_effects(a.region, info.effects_per_region)?;
+                let step = RegionEffect { effect: a.effect, hue: a.hue, sat: a.sat, speed: a.speed, time: a.time };
+                match list.get_mut(a.index as usize) {
+                    Some(slot) => *slot = step,
+                    None => return Ok(()),
+                }
+                kb.kc_rgb_set_region_effects(a.region, &list)
+            })(),
+            "indicators" => kb.kc_rgb_set_indicators(&keywright_core::kcrgb::Indicators {
+                available: 0,
+                disabled: a.disabled,
+                color: hsv,
+            }),
+            "save" => kb.kc_rgb_save(),
+            _ => return false,
+        };
+        result.is_ok()
     }
 }

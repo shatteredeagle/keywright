@@ -194,6 +194,9 @@ ApplicationWindow {
             LightingPage {
                 backend: backend
                 pal: win.palette
+                keys: win.keymap.layers.length ? win.keymap.layers[0] : []
+                kbWidth: win.keymap.width
+                kbHeight: win.keymap.height
             }
 
             // Shortcuts
