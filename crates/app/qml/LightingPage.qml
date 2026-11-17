@@ -10,6 +10,7 @@ Item {
     property var state: null   // {brightness, effect, speed, hue, saturation, effects:[{name,id}]}
     property bool dirty: false
     property bool saved: false
+    property int effectId: -1
     property var kc: null            // extended lighting state, null when unsupported
     property var keys: []
     property real kbWidth: 22.5
@@ -20,6 +21,7 @@ Item {
     function refresh() {
         const raw = backend.rgb();
         state = raw === "null" ? null : JSON.parse(raw);
+        effectId = state ? state.effect : -1;
         if (state) { hueVal = state.hue; satVal = state.saturation; }
         const k = backend.kc_state();
         kc = k === "null" ? null : JSON.parse(k);
@@ -34,7 +36,10 @@ Item {
     }
 
     function put(field, value) {
-        if (backend.set_rgb(field, value)) { state[field] = value; dirty = true; saved = false; }
+        if (backend.set_rgb(field, value)) {
+            state[field] = value; dirty = true; saved = false;
+            if (field === "effect") effectId = value;
+        }
     }
     function putColor(hue, sat) {
         if (backend.set_rgb_color(hue, sat)) { hueVal = hue; satVal = sat; dirty = true; saved = false; }
@@ -186,11 +191,11 @@ Item {
         }
 
         PerKeyPage {
-            backend: root.backend; pal: root.pal; keys: root.keys; kbWidth: root.kbWidth; kbHeight: root.kbHeight; kc: root.kc
+            backend: root.backend; pal: root.pal; keys: root.keys; kbWidth: root.kbWidth; kbHeight: root.kbHeight; kc: root.kc; effectId: root.effectId
             onShowEffect: root.useEffect(23)
         }
         RegionsPage {
-            backend: root.backend; pal: root.pal; keys: root.keys; kbWidth: root.kbWidth; kbHeight: root.kbHeight; kc: root.kc
+            backend: root.backend; pal: root.pal; keys: root.keys; kbWidth: root.kbWidth; kbHeight: root.kbHeight; kc: root.kc; effectId: root.effectId
             effects: root.state ? root.state.effects : []
             onShowEffect: root.useEffect(24)
         }

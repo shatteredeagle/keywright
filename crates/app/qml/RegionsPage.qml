@@ -14,6 +14,7 @@ Item {
     property var effects: []       // [{name, id}] built-in effects
     property int brush: 0
     property bool dirty: false
+    property int effectId: -1
     signal showEffect()
 
     readonly property var regionColors: ["#3d8bfd", "#f08c2e", "#3cb371", "#c45ab3"]
@@ -24,14 +25,24 @@ Item {
         const led = keys[i].led;
         if (led === null || led === undefined) return;
         if (backend.kc_apply("region", JSON.stringify({ leds: [led], region: brush }))) {
-            kc.regions[led] = brush; kc = kc; dirty = true;
+            const regions = kc.regions.slice();
+            regions[led] = brush;
+            kc = Object.assign({}, kc, { regions: regions });
+            dirty = true;
+            if (effectId !== 24) showEffect();
         }
     }
     function step(region, index, patch) {
         const cur = Object.assign({}, kc.regionEffects[region][index], patch);
         const ok = backend.kc_apply("regionEffect", JSON.stringify({
             region: region, index: index, effect: cur.effect, hue: cur.hue, sat: cur.sat, speed: cur.speed, time: cur.time }));
-        if (ok) { kc.regionEffects[region][index] = cur; kc = kc; dirty = true; }
+        if (ok) {
+            const all = kc.regionEffects.map(r => r.slice());
+            all[region][index] = cur;
+            kc = Object.assign({}, kc, { regionEffects: all });
+            dirty = true;
+            if (effectId !== 24) showEffect();
+        }
     }
 
     ScrollView {
