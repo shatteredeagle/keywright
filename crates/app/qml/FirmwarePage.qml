@@ -17,7 +17,6 @@ Item {
     property string backupError: ""
     property bool skipBackup: false
     property var acks: [false, false, false, false, false]
-    property string confirmText: ""
     property string restoreMessage: ""
     property bool userChose: false
 
@@ -29,7 +28,7 @@ Item {
     readonly property bool acksOk: acks.every(a => a)
     readonly property bool backupOk: backupPath !== "" || skipBackup
     readonly property bool running: progress.running
-    readonly property bool canFlash: imageOk && bootOk && acksOk && backupOk && confirmText === "FLASH" && !running && !progress.finished
+    readonly property bool canFlash: imageOk && bootOk && acksOk && backupOk && !running && !progress.finished
     readonly property bool done: progress.finished && progress.error === null
     readonly property bool failed: progress.finished && progress.error !== null
 
@@ -271,12 +270,11 @@ Item {
                         visible: !root.running && !root.progress.finished
                         Layout.fillWidth: true
                         spacing: 10
-                        Text { text: "Type FLASH to confirm"; color: Theme.dim; font.pixelSize: 13 }
-                        RowLayout {
-                            spacing: 12
-                            KField { Layout.preferredWidth: 220; placeholderText: "FLASH"; text: root.confirmText; onTextEdited: root.confirmText = text }
-                            KButton { text: "Flash firmware"; iconName: "bolt"; variant: "danger"; enabled: root.canFlash; onClicked: root.flash() }
+                        Text {
+                            text: "Press and hold the red button for two seconds to flash. It works with the mouse alone, because the keyboard is dark in bootloader mode."
+                            color: Theme.dim; font.pixelSize: 13; wrapMode: Text.WordWrap; Layout.fillWidth: true
                         }
+                        HoldButton { enabled: root.canFlash; text: "Hold to flash firmware"; onActivated: root.flash() }
                         Text {
                             visible: !root.canFlash
                             color: Theme.faint; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
@@ -284,8 +282,7 @@ Item {
                                 !root.imageOk ? "a valid firmware" : "",
                                 !root.acksOk ? "all five warnings switched on" : "",
                                 !root.backupOk ? "a backup (or continue without one)" : "",
-                                !root.bootOk ? "the keyboard in bootloader mode" : "",
-                                root.confirmText !== "FLASH" ? "FLASH typed above" : ""
+                                !root.bootOk ? "the keyboard in bootloader mode" : ""
                             ].filter(x => x !== "").join(", ") + "."
                         }
                     }

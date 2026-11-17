@@ -33,7 +33,7 @@ jobs:
       matrix:
         include:
           - { name: Linux, os: ubuntu-latest }
-          - { name: macOS, os: macos-latest }
+          - { name: macOS, os: macos-latest, cxxflags: "-include arm_acle.h" }
           - { name: Windows, os: windows-latest, qt_arch: win64_msvc2022_64 }
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +49,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libudev-dev libxkbcommon-x11-0 libxcb-cursor0 libegl1 libgl1 libfontconfig1
       - name: Build
+        env:
+          # Qt 6.8's headers need this with Apple's newest clang on arm64.
+          CXXFLAGS: ${{ matrix.cxxflags }}
         run: cargo build --release -p keywright
       - name: Start the app and load every QML page
         shell: bash

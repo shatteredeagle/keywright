@@ -17,6 +17,7 @@ fn main() {
                 "qml/MacrosPage.qml",
                 "qml/FirmwarePage.qml",
                 "qml/KScrollBar.qml",
+                "qml/HoldButton.qml",
                 "qml/PageHeader.qml",
                 "qml/Card.qml",
                 "qml/KSwitch.qml",

@@ -244,7 +244,7 @@ impl Bootloader {
                 layout.start
             )));
         }
-        let mut handle = handle;
+        let handle = handle;
         let _ = handle.set_auto_detach_kernel_driver(true);
         handle
             .claim_interface(0)
