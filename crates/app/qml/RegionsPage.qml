@@ -84,6 +84,7 @@ Item {
                 kbHeight: root.kbHeight
                 fills: root.fills
                 showLabels: false
+            paintMode: true
                 onKeyClicked: i => root.assign(i)
             }
 

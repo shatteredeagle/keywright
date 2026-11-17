@@ -11,6 +11,8 @@ Item {
     // Optional per-key cap colours (index-aligned with `keys`); empty entries use the theme colour.
     property var fills: []
     property bool showLabels: true
+    // Paint mode: press and drag across keys; each key entered reports keyClicked once per stroke.
+    property bool paintMode: false
     signal keyClicked(int index)
 
     readonly property real unit: Math.min(width / kbWidth, height / kbHeight)
@@ -64,10 +66,35 @@ Item {
                 id: mouse
                 anchors.fill: parent
                 hoverEnabled: true
-                enabled: root.interactive
+                enabled: root.interactive && !root.paintMode
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.keyClicked(cap.index)
             }
         }
+    }
+
+    // Drag painting: hit-test the key under the pointer and report each newly entered key.
+    MouseArea {
+        id: stroke
+        anchors.fill: parent
+        enabled: root.interactive && root.paintMode
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        property int last: -1
+        function keyAt(px, py) {
+            for (let i = 0; i < root.keys.length; i++) {
+                const k = root.keys[i];
+                if (px >= k.x * root.unit && px < (k.x + k.w) * root.unit - 3
+                    && py >= k.y * root.unit && py < (k.y + k.h) * root.unit - 3) return i;
+            }
+            return -1;
+        }
+        function paintAt(px, py) {
+            const i = keyAt(px, py);
+            if (i >= 0 && i !== last) { last = i; root.keyClicked(i); }
+        }
+        onPressed: mouse => { last = -1; paintAt(mouse.x, mouse.y); }
+        onPositionChanged: mouse => { if (pressed) paintAt(mouse.x, mouse.y); }
+        onReleased: last = -1
     }
 }

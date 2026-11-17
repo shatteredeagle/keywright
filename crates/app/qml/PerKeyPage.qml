@@ -83,6 +83,7 @@ Item {
             kbHeight: root.kbHeight
             fills: root.fills
             showLabels: false
+            paintMode: true
             onKeyClicked: i => root.paint(i)
         }
         Item { Layout.fillHeight: true }
