@@ -1,6 +1,7 @@
 //! VIA raw-HID protocol client for QMK keyboards (Keychron Q6 Max first).
 
 pub mod backup;
+pub mod dfu;
 pub mod kcrgb;
 pub mod keycode;
 pub mod layout;
@@ -43,6 +44,10 @@ pub enum Error {
     Unhandled(u8),
     #[error("keyboard rejected lighting command {0:#04x}")]
     Rejected(u8),
+    #[error("usb: {0}")]
+    Usb(#[from] rusb::Error),
+    #[error("{0}")]
+    Dfu(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
