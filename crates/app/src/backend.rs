@@ -28,6 +28,9 @@ pub mod qobject {
         fn catalog(self: &Backend) -> QString;
 
         #[qinvokable]
+        fn set_encoder(self: Pin<&mut Backend>, layer: i32, clockwise: bool, code: i32) -> bool;
+
+        #[qinvokable]
         fn set_key(self: Pin<&mut Backend>, layer: i32, row: i32, col: i32, code: i32) -> bool;
 
         #[qinvokable]
@@ -66,6 +69,8 @@ pub struct BackendRust {
     layout: Layout,
     layers: Vec<Vec<u16>>,
     /// LED index for each key of the layout, when the keyboard supports Keychron's extended RGB.
+    /// `[layer][0 = counter-clockwise, 1 = clockwise]` bindings for the knob.
+    encoders: Vec<[u16; 2]>,
     led_of: Vec<Option<u8>>,
     led_count: u8,
     extended_rgb: bool,
@@ -79,6 +84,7 @@ impl Default for BackendRust {
             keyboard: None,
             layout: Layout::q6_max_ansi(),
             layers: Vec::new(),
+            encoders: Vec::new(),
             led_of: Vec::new(),
             led_count: 0,
             extended_rgb: false,
@@ -132,6 +138,10 @@ impl qobject::Backend {
                             rust.extended_rgb = true;
                         }
                     }
+                    rust.encoders = (0..layers.len() as u8)
+                        .map(|l| Ok([kb.encoder(l, 0, false)?, kb.encoder(l, 0, true)?]))
+                        .collect::<keywright_core::Result<Vec<_>>>()
+                        .unwrap_or_default();
                     rust.keyboard = Some(kb);
                     rust.layers = layers;
                     self.as_mut().set_connected(true);
@@ -171,8 +181,13 @@ impl qobject::Backend {
             })
             .collect();
         let (w, h) = r.layout.size();
+        let encoders: Vec<_> = r
+            .encoders
+            .iter()
+            .map(|e| e.iter().map(|&c| json!({ "code": c, "label": keycode::name(c) })).collect::<Vec<_>>())
+            .collect();
         QString::from(
-            json!({ "width": w, "height": h, "layers": layers })
+            json!({ "width": w, "height": h, "layers": layers, "encoders": encoders })
                 .to_string()
                 .as_str(),
         )
@@ -363,5 +378,22 @@ impl qobject::Backend {
             _ => return false,
         };
         result.is_ok()
+    }
+}
+
+impl qobject::Backend {
+    fn set_encoder(mut self: Pin<&mut Self>, layer: i32, clockwise: bool, code: i32) -> bool {
+        let written = match &self.rust().keyboard {
+            Some(kb) => kb.set_encoder(layer as u8, 0, clockwise, code as u16).is_ok(),
+            None => false,
+        };
+        if written {
+            if let Some(slot) = self.as_mut().rust_mut().encoders.get_mut(layer as usize) {
+                slot[clockwise as usize] = code as u16;
+            }
+        } else {
+            self.set_status(QString::from("Could not write to the keyboard."));
+        }
+        written
     }
 }

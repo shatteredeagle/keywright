@@ -53,7 +53,7 @@ Item {
                 anchors.margins: 3
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
-                text: cap.isKnob ? "⟳" : cap.modelData.label
+                text: cap.isKnob ? (cap.modelData.knobLabel || "⟳") : cap.modelData.label
                 elide: Text.ElideRight
                 fontSizeMode: Text.Fit
                 minimumPixelSize: 7

@@ -9,7 +9,7 @@ fn main() {
         _ => return eprintln!("usage: backup <save|verify|restore> <file.json>"),
     };
     let layout = Layout::q6_max_ansi();
-    let d = enumerate().unwrap().into_iter().find(|d| d.product_id == 0x0860).expect("Q6 Max on the USB cable");
+    let d = enumerate().unwrap().into_iter().find(|d| d.product_id == 0x0860 || d.product_id == 0xd030).expect("Q6 Max on the cable or 2.4G receiver");
     let kb = Keyboard::open(&d).unwrap();
     match cmd {
         "save" => {

@@ -52,6 +52,15 @@ ApplicationWindow {
     property var catalog: []
     property int layer: 0
     property int selected: -1
+    property int knobDir: 0     // 0 = turn left (counter-clockwise), 1 = turn right
+    readonly property var selectedKey: selected >= 0 && selected < layerKeys.length ? layerKeys[selected] : null
+    readonly property bool knobSelected: selectedKey !== null && selectedKey.encoder !== null && selectedKey.encoder !== undefined
+    // Keys as drawn: the knob shows what turning it does on this layer.
+    readonly property var displayKeys: layerKeys.map(k => {
+        if (k.encoder === null || k.encoder === undefined || !keymap.encoders || keymap.encoders.length <= layer) return k;
+        const e = keymap.encoders[layer];
+        return Object.assign({}, k, { knobLabel: "↶ " + (e[0].label || "–") + "\n↷ " + (e[1].label || "–") });
+    })
     readonly property var layerKeys: keymap.layers.length > layer ? keymap.layers[layer] : []
 
     function reload() {
@@ -159,19 +168,40 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.preferredHeight: width / win.keymap.width * win.keymap.height
                         pal: win.palette
-                        keys: win.layerKeys
+                        keys: win.displayKeys
                         kbWidth: win.keymap.width
                         kbHeight: win.keymap.height
                         selected: win.selected
                         onKeyClicked: i => win.selected = i
+                    }
+                    RowLayout {
+                        visible: win.knobSelected
+                        spacing: 8
+                        Label { text: "Knob"; opacity: 0.7 }
+                        Repeater {
+                            model: [{ dir: 0, name: "Turn left" }, { dir: 1, name: "Turn right" }]
+                            delegate: Button {
+                                required property var modelData
+                                readonly property var bound: win.keymap.encoders && win.keymap.encoders.length > win.layer ? win.keymap.encoders[win.layer][modelData.dir] : null
+                                text: modelData.name + (bound ? ": " + (bound.label || "none") : "")
+                                highlighted: win.knobDir === modelData.dir
+                                onClicked: win.knobDir = modelData.dir
+                            }
+                        }
                     }
                     KeyPicker {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         visible: win.selected >= 0
                         catalog: win.catalog
-                        title: win.selected >= 0 ? "Remap “" + (win.layerKeys[win.selected].label || "empty") + "” on layer " + win.layer : ""
+                        title: win.selected < 0 ? ""
+                             : win.knobSelected ? "Knob " + (win.knobDir === 1 ? "turn right" : "turn left") + " on layer " + win.layer
+                             : "Remap “" + (win.layerKeys[win.selected].label || "empty") + "” on layer " + win.layer
                         function apply(code) {
+                            if (win.knobSelected) {
+                                if (backend.set_encoder(win.layer, win.knobDir === 1, code)) win.keymap = JSON.parse(backend.keymap());
+                                return;
+                            }
                             const k = win.layerKeys[win.selected];
                             if (backend.set_key(win.layer, k.row, k.col, code)) {
                                 win.keymap = JSON.parse(backend.keymap());
