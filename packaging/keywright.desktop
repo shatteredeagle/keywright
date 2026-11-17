@@ -6,6 +6,6 @@ Comment=Configure the keymap, knob and lighting of a Keychron Q6 Max
 Exec=keywright
 Icon=keywright
 Terminal=false
-Categories=Settings;HardwareSettings;Utility;
+Categories=Settings;HardwareSettings;
 Keywords=keyboard;keychron;qmk;via;rgb;remap;
 StartupWMClass=keywright
