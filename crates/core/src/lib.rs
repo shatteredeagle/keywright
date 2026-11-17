@@ -1,5 +1,6 @@
 //! VIA raw-HID protocol client for QMK keyboards (Keychron Q6 Max first).
 
+pub mod keycode;
 pub mod layout;
 
 use hidapi::{HidApi, HidDevice};
@@ -13,6 +14,8 @@ const TIMEOUT: Duration = Duration::from_millis(500);
 
 const CMD_PROTOCOL_VERSION: u8 = 0x01;
 const CMD_GET_KEYBOARD_VALUE: u8 = 0x02;
+const CMD_GET_VALUE: u8 = 0x08;
+const CMD_KEYCHRON_RGB: u8 = 0xA8;
 const CMD_LAYER_COUNT: u8 = 0x11;
 const CMD_KEYMAP_BUFFER: u8 = 0x12;
 
@@ -109,4 +112,49 @@ impl Keyboard {
         }
         Ok(bytes.chunks(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect())
     }
+
+    /// Read one VIA custom value (`channel`, `value_id`); returns the payload after the echoed ids.
+    pub fn custom_get(&self, channel: u8, value_id: u8) -> Result<[u8; 4]> {
+        let r = self.xfer(&[CMD_GET_VALUE, channel, value_id])?;
+        Ok([r[3], r[4], r[5], r[6]])
+    }
+
+    /// Basic backlight state: brightness, effect, speed, hue, saturation.
+    pub fn rgb_basic(&self) -> Result<RgbBasic> {
+        let get = |id| self.custom_get(RGB_CHANNEL, id);
+        let color = get(4)?;
+        Ok(RgbBasic {
+            brightness: get(1)?[0],
+            effect: get(2)?[0],
+            speed: get(3)?[0],
+            hue: color[0],
+            saturation: color[1],
+        })
+    }
+
+    /// Keychron RGB extension: protocol version and LED count.
+    pub fn keychron_rgb_info(&self) -> Result<(u8, u8)> {
+        let ver = self.xfer(&[CMD_KEYCHRON_RGB, 0x01])?;
+        let leds = self.xfer(&[CMD_KEYCHRON_RGB, 0x05])?;
+        Ok((ver[3], leds[3]))
+    }
+
+    /// Read every layer as a map keyed by (row, col) from the layout.
+    pub fn read_keymap(&self, layout: &layout::Layout) -> Result<Vec<Vec<u16>>> {
+        let layers = self.layer_count()?;
+        (0..layers)
+            .map(|l| self.read_layer(l, layout.rows as usize, layout.cols as usize))
+            .collect()
+    }
+}
+
+const RGB_CHANNEL: u8 = 3;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RgbBasic {
+    pub brightness: u8,
+    pub effect: u8,
+    pub speed: u8,
+    pub hue: u8,
+    pub saturation: u8,
 }

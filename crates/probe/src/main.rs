@@ -1,11 +1,8 @@
-use keywright_core::{enumerate, Keyboard};
+use keywright_core::{enumerate, keycode, layout::Layout, Keyboard};
 
 fn main() {
-    let devices = enumerate().expect("enumerate");
-    if devices.is_empty() {
-        eprintln!("no Keychron raw-HID endpoints found");
-    }
-    for d in devices {
+    let layout = Layout::q6_max_ansi();
+    for d in enumerate().expect("enumerate") {
         println!("== {:04x} {} ({})", d.product_id, d.product, d.path);
         let kb = match Keyboard::open(&d) {
             Ok(k) => k,
@@ -15,14 +12,23 @@ fn main() {
             Ok(v) => println!("  via protocol {v}"),
             Err(e) => { println!("  no VIA reply: {e}"); continue; }
         }
-        if let Ok(u) = kb.uptime_ms() { println!("  uptime {}s", u / 1000); }
-        let layers = kb.layer_count().unwrap_or(0);
-        println!("  layers {layers}");
-        match kb.read_layer(0, 6, 21) {
-            Ok(codes) => for row in codes.chunks(21) {
-                println!("  {}", row.iter().map(|c| format!("{c:04x}")).collect::<Vec<_>>().join(" "));
-            },
-            Err(e) => println!("  keymap read failed: {e}"),
+        match kb.rgb_basic() { Ok(r) => println!("  rgb {r:?}"), Err(e) => println!("  rgb basic: {e}") }
+        match kb.keychron_rgb_info() {
+            Ok((v, n)) => println!("  keychron rgb protocol {v}, {n} leds"),
+            Err(e) => println!("  keychron rgb: {e}"),
+        }
+        let Ok(layers) = kb.read_keymap(&layout) else { println!("  keymap read failed"); continue };
+        println!("  layers {}", layers.len());
+        for (i, layer) in layers.iter().enumerate().take(1) {
+            println!("  layer {i}:");
+            let mut row = 0.0f32;
+            let mut line = String::new();
+            for k in &layout.keys {
+                if k.y != row { println!("    {line}"); line.clear(); row = k.y; }
+                let code = layer[k.row as usize * layout.cols as usize + k.col as usize];
+                line += &format!("{:<7}", keycode::name(code));
+            }
+            println!("    {line}");
         }
     }
 }
