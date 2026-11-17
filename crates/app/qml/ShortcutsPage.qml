@@ -44,6 +44,7 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             contentWidth: availableWidth
+                ScrollBar.vertical: KScrollBar {}
             clip: true
             GridLayout {
                 width: parent.width

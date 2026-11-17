@@ -84,6 +84,7 @@ Item {
     ScrollView {
         anchors.fill: parent
         contentWidth: availableWidth
+                ScrollBar.vertical: KScrollBar {}
         clip: true
         ColumnLayout {
             x: 28

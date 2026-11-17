@@ -16,6 +16,7 @@ fn main() {
                 "qml/IndicatorsPage.qml",
                 "qml/MacrosPage.qml",
                 "qml/FirmwarePage.qml",
+                "qml/KScrollBar.qml",
                 "qml/PageHeader.qml",
                 "qml/Card.qml",
                 "qml/KSwitch.qml",

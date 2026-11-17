@@ -103,7 +103,7 @@ Item {
                         HoverHandler { id: sh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.slot = slotItem.index }
                     }
-                    ScrollBar.vertical: ScrollBar {}
+                    ScrollBar.vertical: KScrollBar {}
                 }
             }
 
@@ -122,6 +122,7 @@ Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         contentWidth: availableWidth
+                ScrollBar.vertical: KScrollBar {}
                         clip: true
                         ColumnLayout {
                             width: parent.width
