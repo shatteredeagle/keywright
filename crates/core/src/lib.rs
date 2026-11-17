@@ -14,7 +14,10 @@ const TIMEOUT: Duration = Duration::from_millis(500);
 
 const CMD_PROTOCOL_VERSION: u8 = 0x01;
 const CMD_GET_KEYBOARD_VALUE: u8 = 0x02;
+const CMD_SET_KEYCODE: u8 = 0x05;
+const CMD_SET_VALUE: u8 = 0x07;
 const CMD_GET_VALUE: u8 = 0x08;
+const CMD_SAVE_VALUES: u8 = 0x09;
 const CMD_KEYCHRON_RGB: u8 = 0xA8;
 const CMD_LAYER_COUNT: u8 = 0x11;
 const CMD_KEYMAP_BUFFER: u8 = 0x12;
@@ -117,6 +120,34 @@ impl Keyboard {
     pub fn custom_get(&self, channel: u8, value_id: u8) -> Result<[u8; 4]> {
         let r = self.xfer(&[CMD_GET_VALUE, channel, value_id])?;
         Ok([r[3], r[4], r[5], r[6]])
+    }
+
+    /// Write one keycode; the keyboard stores it immediately.
+    pub fn set_keycode(&self, layer: u8, row: u8, col: u8, code: u16) -> Result<()> {
+        let c = code.to_be_bytes();
+        self.xfer(&[CMD_SET_KEYCODE, layer, row, col, c[0], c[1]]).map(drop)
+    }
+
+    /// Write a VIA custom value to RAM. Call `save_channel` to persist it.
+    pub fn custom_set(&self, channel: u8, value_id: u8, data: &[u8]) -> Result<()> {
+        let mut req = vec![CMD_SET_VALUE, channel, value_id];
+        req.extend_from_slice(data);
+        self.xfer(&req).map(drop)
+    }
+
+    pub fn save_channel(&self, channel: u8) -> Result<()> {
+        self.xfer(&[CMD_SAVE_VALUES, channel]).map(drop)
+    }
+
+    /// Apply backlight settings; with `save` they survive a power cycle.
+    /// The firmware clamps brightness 255 to 254 on write, so callers should not rewrite untouched fields.
+    pub fn set_rgb_basic(&self, v: &RgbBasic, save: bool) -> Result<()> {
+        self.custom_set(RGB_CHANNEL, 1, &[v.brightness])?;
+        self.custom_set(RGB_CHANNEL, 2, &[v.effect])?;
+        self.custom_set(RGB_CHANNEL, 3, &[v.speed])?;
+        self.custom_set(RGB_CHANNEL, 4, &[v.hue, v.saturation])?;
+        if save { self.save_channel(RGB_CHANNEL)?; }
+        Ok(())
     }
 
     /// Basic backlight state: brightness, effect, speed, hue, saturation.
