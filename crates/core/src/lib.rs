@@ -1,5 +1,6 @@
 //! VIA raw-HID protocol client for QMK keyboards (Keychron Q6 Max first).
 
+pub mod backup;
 pub mod keycode;
 pub mod layout;
 
@@ -19,7 +20,14 @@ const CMD_SET_VALUE: u8 = 0x07;
 const CMD_GET_VALUE: u8 = 0x08;
 const CMD_SAVE_VALUES: u8 = 0x09;
 const CMD_KEYCHRON_RGB: u8 = 0xA8;
+const CMD_MACRO_BUFFER_SIZE: u8 = 0x0D;
+const CMD_MACRO_GET_BUFFER: u8 = 0x0E;
+const CMD_MACRO_SET_BUFFER: u8 = 0x0F;
 const CMD_LAYER_COUNT: u8 = 0x11;
+const CMD_KEYMAP_SET_BUFFER: u8 = 0x13;
+const CMD_ENCODER_GET: u8 = 0x14;
+const CMD_ENCODER_SET: u8 = 0x15;
+const CMD_KC_FIRMWARE_VERSION: u8 = 0xA1;
 const CMD_KEYMAP_BUFFER: u8 = 0x12;
 
 #[derive(Debug, thiserror::Error)]
@@ -170,6 +178,64 @@ impl Keyboard {
         Ok((ver[3], leds[3]))
     }
 
+    /// Keychron firmware version string (VIA protocol 0xA1).
+    pub fn firmware_version(&self) -> Result<String> {
+        let r = self.xfer(&[CMD_KC_FIRMWARE_VERSION])?;
+        let end = r[1..].iter().position(|&b| b == 0).unwrap_or(REPORT_LEN - 1);
+        Ok(String::from_utf8_lossy(&r[1..1 + end]).into_owned())
+    }
+
+    pub fn macro_buffer_size(&self) -> Result<u16> {
+        let r = self.xfer(&[CMD_MACRO_BUFFER_SIZE])?;
+        Ok(u16::from_be_bytes([r[1], r[2]]))
+    }
+
+    pub fn read_macro_buffer(&self) -> Result<Vec<u8>> {
+        let total = self.macro_buffer_size()? as usize;
+        let mut out = Vec::with_capacity(total);
+        while out.len() < total {
+            let o = (out.len() as u16).to_be_bytes();
+            let n = (total - out.len()).min(28) as u8;
+            let r = self.xfer(&[CMD_MACRO_GET_BUFFER, o[0], o[1], n])?;
+            out.extend_from_slice(&r[4..4 + n as usize]);
+        }
+        Ok(out)
+    }
+
+    pub fn write_macro_buffer(&self, data: &[u8]) -> Result<()> {
+        for (i, chunk) in data.chunks(28).enumerate() {
+            let o = ((i * 28) as u16).to_be_bytes();
+            let mut req = vec![CMD_MACRO_SET_BUFFER, o[0], o[1], chunk.len() as u8];
+            req.extend_from_slice(chunk);
+            self.xfer(&req)?;
+        }
+        Ok(())
+    }
+
+    /// Encoder (knob) binding for one layer: `clockwise` selects the direction.
+    pub fn encoder(&self, layer: u8, index: u8, clockwise: bool) -> Result<u16> {
+        let r = self.xfer(&[CMD_ENCODER_GET, layer, index, clockwise as u8])?;
+        Ok(u16::from_be_bytes([r[4], r[5]]))
+    }
+
+    pub fn set_encoder(&self, layer: u8, index: u8, clockwise: bool, code: u16) -> Result<()> {
+        let c = code.to_be_bytes();
+        self.xfer(&[CMD_ENCODER_SET, layer, index, clockwise as u8, c[0], c[1]]).map(drop)
+    }
+
+    /// Replace one whole layer at once.
+    pub fn write_layer(&self, layer: u8, codes: &[u16]) -> Result<()> {
+        let bytes: Vec<u8> = codes.iter().flat_map(|c| c.to_be_bytes()).collect();
+        let base = layer as usize * bytes.len();
+        for (i, chunk) in bytes.chunks(28).enumerate() {
+            let o = ((base + i * 28) as u16).to_be_bytes();
+            let mut req = vec![CMD_KEYMAP_SET_BUFFER, o[0], o[1], chunk.len() as u8];
+            req.extend_from_slice(chunk);
+            self.xfer(&req)?;
+        }
+        Ok(())
+    }
+
     /// Read every layer as a map keyed by (row, col) from the layout.
     pub fn read_keymap(&self, layout: &layout::Layout) -> Result<Vec<Vec<u16>>> {
         let layers = self.layer_count()?;
@@ -181,7 +247,7 @@ impl Keyboard {
 
 pub const RGB_CHANNEL: u8 = 3;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RgbBasic {
     pub brightness: u8,
     pub effect: u8,
