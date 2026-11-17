@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Keywright
+GenericName=Keyboard configurator
+Comment=Configure the keymap, knob and lighting of a Keychron Q6 Max
+Exec=keywright
+Icon=keywright
+Terminal=false
+Categories=Utility;HardwareSettings;
+Keywords=keyboard;keychron;qmk;via;rgb;remap;
+StartupWMClass=keywright
