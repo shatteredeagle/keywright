@@ -11,6 +11,10 @@ install -Dm644 packaging/keywright.desktop "$prefix/share/applications/keywright
 for px in 32 64 128 256; do
   install -Dm644 "packaging/icons/keywright-$px.png" "$prefix/share/icons/hicolor/${px}x${px}/apps/keywright.png"
 done
+# Firmware the app can flash from its Firmware page (built by firmware/build.sh).
+for f in firmware/out/keywright-*.bin firmware/out/keywright-*.bin.sha256; do
+  [ -f "$f" ] && install -Dm644 "$f" "$prefix/share/keywright/firmware/$(basename "$f")"
+done
 command -v update-desktop-database >/dev/null && update-desktop-database "$prefix/share/applications" || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t "$prefix/share/icons/hicolor" || true
 echo "Installed to $prefix. Launch Keywright from your application menu."
