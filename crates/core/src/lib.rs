@@ -100,6 +100,14 @@ impl Keyboard {
         Ok(u16::from_be_bytes([r[1], r[2]]))
     }
 
+    /// VID/PID of the keyboard that answered. Only wireless replies carry it (bytes 3-6), so a
+    /// receiver can be told apart from another device behind it; `None` on a cable.
+    pub fn identity(&self) -> Result<Option<(u16, u16)>> {
+        let r = self.xfer(&[CMD_PROTOCOL_VERSION])?;
+        let (vid, pid) = (u16::from_be_bytes([r[3], r[4]]), u16::from_be_bytes([r[5], r[6]]));
+        Ok((vid != 0 || pid != 0).then_some((vid, pid)))
+    }
+
     pub fn uptime_ms(&self) -> Result<u32> {
         let r = self.xfer(&[CMD_GET_KEYBOARD_VALUE, 0x01])?;
         Ok(u32::from_be_bytes([r[2], r[3], r[4], r[5]]))

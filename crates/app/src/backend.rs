@@ -75,35 +75,49 @@ impl Default for BackendRust {
 
 impl qobject::Backend {
     fn load(mut self: Pin<&mut Self>) {
-        let found = enumerate()
-            .ok()
-            .and_then(|d| d.into_iter().find(|d| d.product_id == 0x0860));
-        let Some(info) = found else {
+        const Q6_MAX: u16 = 0x0860;
+        const RECEIVER: u16 = 0xD030;
+        let mut found = enumerate().unwrap_or_default();
+        // Prefer the cable, then the 2.4G receiver.
+        found.retain(|d| d.product_id == Q6_MAX || d.product_id == RECEIVER);
+        found.sort_by_key(|d| d.product_id != Q6_MAX);
+        if found.is_empty() {
             self.as_mut().set_connected(false);
-            self.set_status(QString::from(
-                "Plug the keyboard in with its USB cable to configure it.",
-            ));
+            self.set_status(QString::from("Plug in the USB cable, or switch the keyboard to 2.4G with its receiver plugged in."));
             return;
-        };
-        let result = Keyboard::open(&info).and_then(|kb| {
-            let layers = kb.read_keymap(&self.rust().layout)?;
-            Ok((kb, layers))
-        });
-        match result {
-            Ok((kb, layers)) => {
-                let mut rust = self.as_mut().rust_mut();
-                rust.keyboard = Some(kb);
-                rust.layers = layers;
-                self.as_mut().set_connected(true);
-                self.set_status(QString::from("Keychron Q6 Max connected"));
-            }
-            Err(e) => {
-                self.as_mut().set_connected(false);
-                self.set_status(QString::from(
-                    format!("Could not talk to the keyboard: {e}").as_str(),
-                ));
+        }
+        let mut last_error = String::from("no reply from the keyboard");
+        for info in found {
+            let wireless = info.product_id == RECEIVER;
+            let attempt = Keyboard::open(&info).and_then(|kb| {
+                kb.protocol_version()?;
+                if wireless {
+                    // Make sure the keyboard behind the receiver is a Q6 Max.
+                    match kb.identity()? {
+                        Some((_, pid)) if pid == Q6_MAX => {}
+                        _ => return Err(keywright_core::Error::Timeout),
+                    }
+                }
+                let layers = kb.read_keymap(&self.rust().layout)?;
+                Ok((kb, layers))
+            });
+            match attempt {
+                Ok((kb, layers)) => {
+                    let mut rust = self.as_mut().rust_mut();
+                    rust.keyboard = Some(kb);
+                    rust.layers = layers;
+                    self.as_mut().set_connected(true);
+                    let how = if wireless { "2.4 GHz" } else { "USB cable" };
+                    self.set_status(QString::from(format!("Keychron Q6 Max connected ({how})").as_str()));
+                    return;
+                }
+                Err(e) => last_error = e.to_string(),
             }
         }
+        self.as_mut().set_connected(false);
+        self.set_status(QString::from(
+            format!("Could not talk to the keyboard ({last_error}). Wake it by pressing a key and try Reconnect.").as_str(),
+        ));
     }
 
     fn keymap(&self) -> QString {

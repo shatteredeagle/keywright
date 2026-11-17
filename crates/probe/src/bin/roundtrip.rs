@@ -3,7 +3,7 @@ use keywright_core::{enumerate, layout::Layout, Keyboard};
 
 fn main() {
     let layout = Layout::q6_max_ansi();
-    let d = enumerate().unwrap().into_iter().find(|d| d.product_id == 0x0860).expect("Q6 Max on cable");
+    let d = enumerate().unwrap().into_iter().find(|d| d.product_id == 0x0860 || d.product_id == 0xd030).expect("Q6 Max on cable or 2.4G receiver");
     let kb = Keyboard::open(&d).unwrap();
 
     // RGB speed only (brightness is clamped by the firmware, so never rewrite it): RAM only, no save.
