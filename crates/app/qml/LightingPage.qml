@@ -10,10 +10,13 @@ Item {
     property var state: null   // {brightness, effect, speed, hue, saturation, effects:[{name,id}]}
     property bool dirty: false
     property bool saved: false
+    property int hueVal: 0
+    property int satVal: 0
 
     function refresh() {
         const raw = backend.rgb();
         state = raw === "null" ? null : JSON.parse(raw);
+        if (state) { hueVal = state.hue; satVal = state.saturation; }
         dirty = false;
         saved = false;
     }
@@ -24,7 +27,7 @@ Item {
         if (backend.set_rgb(field, value)) { state[field] = value; dirty = true; saved = false; }
     }
     function putColor(hue, sat) {
-        if (backend.set_rgb_color(hue, sat)) { state.hue = hue; state.saturation = sat; dirty = true; saved = false; state = state; }
+        if (backend.set_rgb_color(hue, sat)) { hueVal = hue; satVal = sat; dirty = true; saved = false; }
     }
 
     // A labelled slider row.
@@ -48,7 +51,7 @@ Item {
         Label { text: parent.valueText; Layout.preferredWidth: 40; horizontalAlignment: Text.AlignRight; opacity: 0.7 }
     }
 
-    readonly property color swatch: state ? Qt.hsva(state.hue / 255, state.saturation / 255, 1, 1) : "transparent"
+    readonly property color swatch: Qt.hsva(hueVal / 255, satVal / 255, 1, 1)
 
     ColumnLayout {
         visible: root.state !== null
@@ -94,8 +97,8 @@ Item {
                     id: hue
                     Layout.fillWidth: true
                     from: 0; to: 255; stepSize: 1
-                    value: root.state ? root.state.hue : 0
-                    onMoved: root.putColor(Math.round(value), root.state.saturation)
+                    value: root.hueVal
+                    onMoved: root.putColor(Math.round(value), root.satVal)
                     background: Rectangle {
                         y: hue.height / 2 - 5; height: 10; radius: 5; width: hue.availableWidth; x: hue.leftPadding
                         gradient: Gradient {
@@ -114,14 +117,14 @@ Item {
                     id: sat
                     Layout.fillWidth: true
                     from: 0; to: 255; stepSize: 1
-                    value: root.state ? root.state.saturation : 0
-                    onMoved: root.putColor(root.state.hue, Math.round(value))
+                    value: root.satVal
+                    onMoved: root.putColor(root.hueVal, Math.round(value))
                     background: Rectangle {
                         y: sat.height / 2 - 5; height: 10; radius: 5; width: sat.availableWidth; x: sat.leftPadding
                         gradient: Gradient {
                             orientation: Gradient.Horizontal
                             GradientStop { position: 0; color: "#ffffff" }
-                            GradientStop { position: 1; color: root.state ? Qt.hsva(root.state.hue / 255, 1, 1, 1) : "#ffffff" }
+                            GradientStop { position: 1; color: Qt.hsva(root.hueVal / 255, 1, 1, 1) }
                         }
                     }
                 }
