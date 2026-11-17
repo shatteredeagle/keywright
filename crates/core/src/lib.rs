@@ -4,6 +4,7 @@ pub mod backup;
 pub mod kcrgb;
 pub mod keycode;
 pub mod layout;
+pub mod macros;
 
 use hidapi::{HidApi, HidDevice};
 use std::time::Duration;
@@ -21,6 +22,7 @@ const CMD_SET_VALUE: u8 = 0x07;
 const CMD_GET_VALUE: u8 = 0x08;
 const CMD_SAVE_VALUES: u8 = 0x09;
 const CMD_KEYCHRON_RGB: u8 = 0xA8;
+const CMD_MACRO_COUNT: u8 = 0x0C;
 const CMD_MACRO_BUFFER_SIZE: u8 = 0x0D;
 const CMD_MACRO_GET_BUFFER: u8 = 0x0E;
 const CMD_MACRO_SET_BUFFER: u8 = 0x0F;
@@ -227,6 +229,10 @@ impl Keyboard {
         let r = self.xfer(&[CMD_KC_FIRMWARE_VERSION])?;
         let end = r[1..].iter().position(|&b| b == 0).unwrap_or(REPORT_LEN - 1);
         Ok(String::from_utf8_lossy(&r[1..1 + end]).into_owned())
+    }
+
+    pub fn macro_count(&self) -> Result<u8> {
+        Ok(self.xfer(&[CMD_MACRO_COUNT])?[1])
     }
 
     pub fn macro_buffer_size(&self) -> Result<u16> {

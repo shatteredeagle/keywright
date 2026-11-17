@@ -55,6 +55,12 @@ pub mod qobject {
         fn kc_apply(self: &Backend, op: &QString, args: &QString) -> bool;
 
         #[qinvokable]
+        fn macros(self: &Backend) -> QString;
+
+        #[qinvokable]
+        fn set_macros(self: &Backend, json: &QString) -> QString;
+
+        #[qinvokable]
         fn theme(self: &Backend) -> QString;
 
         #[qinvokable]
@@ -395,5 +401,40 @@ impl qobject::Backend {
             self.set_status(QString::from("Could not write to the keyboard."));
         }
         written
+    }
+}
+
+impl qobject::Backend {
+    /// All macro slots plus buffer usage, as JSON; "null" when the keyboard can't be read.
+    fn macros(&self) -> QString {
+        use keywright_core::macros;
+        let Some(kb) = self.rust().keyboard.as_ref() else { return QString::from("null") };
+        let read = || -> keywright_core::Result<serde_json::Value> {
+            let count = kb.macro_count()? as usize;
+            let buffer = kb.read_macro_buffer()?;
+            let list = macros::decode(&buffer, count);
+            let used = macros::encode(&list, buffer.len()).map(|b| b.iter().rposition(|&x| x != 0).map_or(0, |i| i + 1)).unwrap_or(0);
+            Ok(json!({ "macros": list, "size": buffer.len(), "used": used }))
+        };
+        match read() {
+            Ok(v) => QString::from(v.to_string().as_str()),
+            Err(_) => QString::from("null"),
+        }
+    }
+
+    /// Write all macros. Returns an empty string on success, otherwise a message to show.
+    fn set_macros(&self, json: &QString) -> QString {
+        use keywright_core::macros::{self, Macro};
+        let Some(kb) = self.rust().keyboard.as_ref() else { return QString::from("No keyboard connected.") };
+        let list: Vec<Macro> = match serde_json::from_str(&json.to_string()) {
+            Ok(l) => l,
+            Err(e) => return QString::from(format!("Could not read the macros: {e}").as_str()),
+        };
+        let result = kb
+            .macro_buffer_size()
+            .map_err(|e| e.to_string())
+            .and_then(|size| macros::encode(&list, size as usize).map_err(|e| e.to_string()))
+            .and_then(|buf| kb.write_macro_buffer(&buf).map_err(|e| e.to_string()));
+        QString::from(result.err().unwrap_or_default().as_str())
     }
 }

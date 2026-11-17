@@ -107,7 +107,7 @@ ApplicationWindow {
                 spacing: 4
                 Label { text: "Keywright"; font.bold: true; font.pixelSize: 20; Layout.bottomMargin: 14 }
                 Repeater {
-                    model: ["Keymap", "Lighting", "Shortcuts"]
+                    model: ["Keymap", "Lighting", "Macros", "Shortcuts"]
                     delegate: ItemDelegate {
                         required property string modelData
                         required property int index
@@ -227,6 +227,13 @@ ApplicationWindow {
                 keys: win.keymap.layers.length ? win.keymap.layers[0] : []
                 kbWidth: win.keymap.width
                 kbHeight: win.keymap.height
+            }
+
+            // Macros
+            MacrosPage {
+                backend: backend
+                pal: win.palette
+                catalog: win.catalog
             }
 
             // Shortcuts

@@ -11,6 +11,7 @@ fn main() {
         "qml/PerKeyPage.qml",
         "qml/RegionsPage.qml",
         "qml/IndicatorsPage.qml",
+        "qml/MacrosPage.qml",
     ]))
     .file("src/backend.rs")
     .build();
