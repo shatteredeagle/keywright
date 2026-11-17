@@ -1,6 +1,7 @@
 //! VIA raw-HID protocol client for QMK keyboards (Keychron Q6 Max first).
 
 pub mod backup;
+pub mod kcrgb;
 pub mod keycode;
 pub mod layout;
 
@@ -38,6 +39,8 @@ pub enum Error {
     Timeout,
     #[error("device does not support command {0:#04x}")]
     Unhandled(u8),
+    #[error("keyboard rejected lighting command {0:#04x}")]
+    Rejected(u8),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -79,14 +82,38 @@ impl Keyboard {
     }
 
     /// Send one 32-byte request and return the 32-byte reply.
+    pub(crate) fn raw_xfer(&self, req: &[u8]) -> Result<[u8; REPORT_LEN]> {
+        self.xfer(req)
+    }
+
     fn xfer(&self, req: &[u8]) -> Result<[u8; REPORT_LEN]> {
         // hidapi wants a leading report-id byte; VIA uses no report ids, so 0.
         let mut out = [0u8; REPORT_LEN + 1];
         out[1..1 + req.len()].copy_from_slice(req);
-        self.dev.write(&out)?;
+        // Drop anything left over from an earlier request that was answered late.
+        let mut stale = [0u8; REPORT_LEN];
+        while self.dev.read_timeout(&mut stale, 0)? > 0 {}
+
+        // A wireless keyboard can miss a request while it wakes up, so ask up to three times,
+        // and accept only a reply that echoes the command we sent.
         let mut reply = [0u8; REPORT_LEN];
-        let n = self.dev.read_timeout(&mut reply, TIMEOUT.as_millis() as i32)?;
-        if n == 0 {
+        let mut matched = false;
+        'attempts: for _ in 0..3 {
+            self.dev.write(&out)?;
+            let deadline = std::time::Instant::now() + TIMEOUT;
+            while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+                let n = self.dev.read_timeout(&mut reply, left.as_millis().max(1) as i32)?;
+                if n == 0 {
+                    break;
+                }
+                let echoes = reply[0] == req[0] && (req[0] != CMD_KEYCHRON_RGB || reply[1] == req[1]);
+                if echoes || reply[0] == 0xFF {
+                    matched = true;
+                    break 'attempts;
+                }
+            }
+        }
+        if !matched {
             return Err(Error::Timeout);
         }
         if reply[0] == 0xFF {
