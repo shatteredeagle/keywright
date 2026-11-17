@@ -29,6 +29,8 @@ struct Definition {
     name: String,
     matrix: Matrix,
     layouts: Layouts,
+    #[serde(default)]
+    menus: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,6 +44,30 @@ pub struct Layout {
     pub rows: u8,
     pub cols: u8,
     pub keys: Vec<Key>,
+    /// Backlight effect names and ids from the definition's Lighting menu.
+    pub rgb_effects: Vec<(String, u8)>,
+}
+
+fn find_effects(v: &Value) -> Option<Vec<(String, u8)>> {
+    match v {
+        Value::Object(o) => {
+            let is_effect = o
+                .get("content")
+                .and_then(|c| c.get(0))
+                .and_then(Value::as_str)
+                == Some("id_qmk_rgb_matrix_effect");
+            if is_effect {
+                return o.get("options").and_then(Value::as_array).map(|opts| {
+                    opts.iter()
+                        .filter_map(|p| Some((p.get(0)?.as_str()?.to_string(), p.get(1)?.as_u64()? as u8)))
+                        .collect()
+                });
+            }
+            o.values().find_map(find_effects)
+        }
+        Value::Array(a) => a.iter().find_map(find_effects),
+        _ => None,
+    }
 }
 
 impl Layout {
@@ -82,7 +108,8 @@ impl Layout {
             }
             y += 1.0;
         }
-        Ok(Layout { name: def.name, rows: def.matrix.rows, cols: def.matrix.cols, keys })
+        let rgb_effects = find_effects(&def.menus).unwrap_or_default();
+        Ok(Layout { name: def.name, rows: def.matrix.rows, cols: def.matrix.cols, keys, rgb_effects })
     }
 
     /// The bundled Q6 Max ANSI (knob) definition from Keychron's firmware repo.
@@ -108,5 +135,7 @@ mod tests {
         let (w, h) = l.size();
         assert!((w - 22.5).abs() < 0.01 && (h - 6.25).abs() < 0.01, "{w}x{h}");
         assert!(l.keys.iter().any(|k| k.encoder == Some(0)));
+        assert_eq!(l.rgb_effects.len(), 23);
+        assert_eq!(l.rgb_effects[0], ("None".to_string(), 0));
     }
 }

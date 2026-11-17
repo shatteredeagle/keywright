@@ -150,8 +150,7 @@ ApplicationWindow {
                             delegate: Button {
                                 required property int index
                                 text: index
-                                checkable: true
-                                checked: win.layer === index
+                                highlighted: win.layer === index
                                 onClicked: { win.layer = index; win.selected = -1; }
                             }
                         }
@@ -191,9 +190,10 @@ ApplicationWindow {
                 }
             }
 
-            // Lighting (next step)
-            Item {
-                Label { anchors.centerIn: parent; text: "Lighting controls arrive in the next step."; opacity: 0.6 }
+            // Lighting
+            LightingPage {
+                backend: backend
+                pal: win.palette
             }
 
             // Shortcuts

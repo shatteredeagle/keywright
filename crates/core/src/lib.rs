@@ -179,7 +179,7 @@ impl Keyboard {
     }
 }
 
-const RGB_CHANNEL: u8 = 3;
+pub const RGB_CHANNEL: u8 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RgbBasic {

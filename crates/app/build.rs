@@ -6,6 +6,7 @@ fn main() {
         "qml/KeyboardView.qml",
         "qml/KeyPicker.qml",
         "qml/ShortcutsPage.qml",
+        "qml/LightingPage.qml",
     ]))
     .file("src/backend.rs")
     .build();

@@ -34,6 +34,18 @@ pub mod qobject {
         fn env(self: &Backend, name: &QString) -> QString;
 
         #[qinvokable]
+        fn rgb(self: &Backend) -> QString;
+
+        #[qinvokable]
+        fn set_rgb(self: &Backend, field: &QString, value: i32) -> bool;
+
+        #[qinvokable]
+        fn set_rgb_color(self: &Backend, hue: i32, saturation: i32) -> bool;
+
+        #[qinvokable]
+        fn save_rgb(self: &Backend) -> bool;
+
+        #[qinvokable]
         fn theme(self: &Backend) -> QString;
 
         #[qinvokable]
@@ -179,5 +191,42 @@ impl qobject::Backend {
             let _ = std::fs::create_dir_all(dir);
         }
         let _ = std::fs::write(path, mode.to_string());
+    }
+}
+
+impl qobject::Backend {
+    fn rgb(&self) -> QString {
+        let r = self.rust();
+        let state = r.keyboard.as_ref().and_then(|kb| kb.rgb_basic().ok());
+        let Some(v) = state else { return QString::from("null") };
+        let effects: Vec<_> = r.layout.rgb_effects.iter().map(|(n, id)| json!({ "name": n, "id": id })).collect();
+        QString::from(
+            json!({
+                "brightness": v.brightness, "effect": v.effect, "speed": v.speed,
+                "hue": v.hue, "saturation": v.saturation, "effects": effects,
+            })
+            .to_string()
+            .as_str(),
+        )
+    }
+
+    fn set_rgb(&self, field: &QString, value: i32) -> bool {
+        let id = match field.to_string().as_str() {
+            "brightness" => 1,
+            "effect" => 2,
+            "speed" => 3,
+            _ => return false,
+        };
+        let byte = value.clamp(0, 255) as u8;
+        self.rust().keyboard.as_ref().is_some_and(|kb| kb.custom_set(keywright_core::RGB_CHANNEL, id, &[byte]).is_ok())
+    }
+
+    fn set_rgb_color(&self, hue: i32, saturation: i32) -> bool {
+        let data = [hue.clamp(0, 255) as u8, saturation.clamp(0, 255) as u8];
+        self.rust().keyboard.as_ref().is_some_and(|kb| kb.custom_set(keywright_core::RGB_CHANNEL, 4, &data).is_ok())
+    }
+
+    fn save_rgb(&self) -> bool {
+        self.rust().keyboard.as_ref().is_some_and(|kb| kb.save_channel(keywright_core::RGB_CHANNEL).is_ok())
     }
 }
