@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 // Hue / saturation / brightness sliders (0-255, as the keyboard stores them) with a swatch.
@@ -11,52 +10,40 @@ RowLayout {
     property bool withValue: true
     readonly property color swatch: Qt.hsva(h / 255, s / 255, v / 255, 1)
     signal edited(int h, int s, int v)
-    spacing: 16
-
-    component Track: Slider {
-        id: sl
-        property var stops: []
-        Layout.fillWidth: true
-        from: 0; to: 255; stepSize: 1
-        background: Rectangle {
-            y: sl.height / 2 - 5; height: 10; radius: 5; width: sl.availableWidth; x: sl.leftPadding
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: sl.stops[0] }
-                GradientStop { position: 0.17; color: sl.stops.length > 2 ? sl.stops[1] : sl.stops[0] }
-                GradientStop { position: 0.33; color: sl.stops.length > 2 ? sl.stops[2] : sl.stops[0] }
-                GradientStop { position: 0.5; color: sl.stops.length > 3 ? sl.stops[3] : sl.stops[sl.stops.length - 1] }
-                GradientStop { position: 0.67; color: sl.stops.length > 4 ? sl.stops[4] : sl.stops[sl.stops.length - 1] }
-                GradientStop { position: 0.83; color: sl.stops.length > 5 ? sl.stops[5] : sl.stops[sl.stops.length - 1] }
-                GradientStop { position: 1.0; color: sl.stops[sl.stops.length - 1] }
-            }
-        }
-    }
+    spacing: 18
 
     ColumnLayout {
         Layout.fillWidth: true
-        spacing: 12
-        Track {
+        spacing: 6
+        Text { text: "Hue"; color: Theme.dim; font.pixelSize: 12 }
+        KSlider {
+            Layout.fillWidth: true
             stops: ["#ff0000", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff", "#ff0000"]
             value: root.h
             onMoved: root.edited(Math.round(value), root.s, root.v)
         }
-        Track {
+        Text { text: "Saturation"; color: Theme.dim; font.pixelSize: 12 }
+        KSlider {
+            Layout.fillWidth: true
             stops: ["#ffffff", Qt.hsva(root.h / 255, 1, 1, 1)]
             value: root.s
             onMoved: root.edited(root.h, Math.round(value), root.v)
         }
-        Track {
+        Text { visible: root.withValue; text: "Brightness"; color: Theme.dim; font.pixelSize: 12 }
+        KSlider {
             visible: root.withValue
+            Layout.fillWidth: true
             stops: ["#000000", Qt.hsva(root.h / 255, root.s / 255, 1, 1)]
             value: root.v
             onMoved: root.edited(root.h, root.s, Math.round(value))
         }
     }
     Rectangle {
-        Layout.preferredWidth: 56; Layout.preferredHeight: 56; radius: 12
+        Layout.preferredWidth: 72; Layout.preferredHeight: 72; radius: 16
         Layout.alignment: Qt.AlignTop
         color: root.swatch
-        border.color: Qt.rgba(0, 0, 0, 0.25)
+        border.color: Qt.rgba(1, 1, 1, Theme.dark ? 0.12 : 0.4)
+        border.width: 2
+        Rectangle { z: -1; anchors.centerIn: parent; width: parent.width + 14; height: width; radius: 22; color: root.swatch; opacity: 0.18 }
     }
 }

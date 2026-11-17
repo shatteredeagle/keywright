@@ -7,9 +7,7 @@ Item {
     id: root
     property var layers: []   // [[{label, code, ...}]] same key order per layer
 
-    property var pal
-
-    // Which base-layer key holds a given layer (code 0x5220 + n).
+    // Which key holds a given layer (code 0x5220 + n).
     function holder(n) {
         for (const layer of layers) {
             const k = layer.find(k => k.code === 0x5220 + n);
@@ -33,62 +31,70 @@ Item {
         return out;
     }
 
-    ScrollView {
+    ColumnLayout {
         anchors.fill: parent
-        contentWidth: availableWidth
-        Flow {
-            width: parent.width
-            spacing: 16
-            Repeater {
-                model: root.cards
-                delegate: Rectangle {
-                    required property var modelData
-                    width: 300
-                    height: head.height + col.implicitHeight + 28
-                    radius: 10
-                    color: pal.base
-                    border.color: Qt.rgba(pal.windowText.r, pal.windowText.g, pal.windowText.b, 0.15)
-                    Column {
-                        id: col
-                        x: 14; y: head.height + 14
-                        width: parent.width - 28
-                        spacing: 4
-                        Repeater {
-                            model: modelData.rows
-                            delegate: RowLayout {
-                                required property var modelData
-                                width: col.width
-                                Rectangle {
-                                    implicitWidth: kl.implicitWidth + 14; implicitHeight: 24; radius: 5
-                                    color: pal.button; border.color: Qt.rgba(0, 0, 0, 0.2)
-                                    Label { id: kl; anchors.centerIn: parent; text: modelData.from; font.family: "monospace" }
-                                }
-                                Label { text: "→"; opacity: 0.5 }
-                                Label { text: modelData.to; Layout.fillWidth: true; elide: Text.ElideRight }
+        anchors.margins: 28
+        spacing: 18
+        PageHeader {
+            Layout.fillWidth: true
+            title: "Shortcuts"
+            subtitle: "What each Fn layer does, at a glance. Change them on the Keymap page."
+        }
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            contentWidth: availableWidth
+            clip: true
+            GridLayout {
+                width: parent.width
+                columns: Math.max(1, Math.floor(width / 330))
+                columnSpacing: 16
+                rowSpacing: 16
+                Repeater {
+                    model: root.cards
+                    delegate: Card {
+                        id: card
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignTop
+                        padding: 18
+                        ColumnLayout {
+                            anchors.fill: parent
+                            spacing: 8
+                            RowLayout {
+                                Layout.bottomMargin: 6
+                                Text { text: card.modelData.hold ? "Hold " + card.modelData.hold : card.modelData.name; color: Theme.text; font.pixelSize: 16; font.weight: Font.DemiBold }
+                                Item { Layout.fillWidth: true }
+                                Text { text: card.modelData.name; color: Theme.faint; font.pixelSize: 12 }
                             }
-                        }
-                    }
-                    Item {
-                        id: head
-                        width: parent.width; height: 44
-                        Label {
-                            x: 14; anchors.verticalCenter: parent.verticalCenter
-                            text: (modelData.hold ? "Hold " + modelData.hold : modelData.name)
-                            font.bold: true; font.pixelSize: 15
-                        }
-                        Label {
-                            anchors { right: parent.right; rightMargin: 14; verticalCenter: parent.verticalCenter }
-                            text: modelData.name; opacity: 0.55
+                            Repeater {
+                                model: card.modelData.rows
+                                delegate: RowLayout {
+                                    id: row
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    spacing: 10
+                                    Rectangle {
+                                        implicitWidth: Math.max(34, kl.implicitWidth + 16); implicitHeight: 26; radius: 6
+                                        color: Theme.capAlpha
+                                        border.color: Theme.capEdge
+                                        Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: 2; radius: 1; color: Theme.capEdge }
+                                        Text { id: kl; anchors.centerIn: parent; text: row.modelData.from; color: Theme.capText; font.pixelSize: 12; font.weight: Font.Medium }
+                                    }
+                                    Icon { name: "arrow-down"; size: 12; color: Theme.faint; rotation: -90 }
+                                    Text { text: row.modelData.to; color: Theme.text; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideRight }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
-    Label {
+    Text {
         anchors.centerIn: parent
         visible: root.cards.length === 0
         text: "No Fn-layer shortcuts to show."
-        opacity: 0.6
+        color: Theme.dim
     }
 }

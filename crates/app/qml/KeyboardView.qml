@@ -1,6 +1,6 @@
 import QtQuick
 
-// Draws one layer of keys. `keys` is an array of {x,y,w,h,label,color,encoder}.
+// Draws one layer of keys as tactile caps. `keys` is an array of {x,y,w,h,label,color,encoder,knobLabel}.
 Item {
     id: root
     property var keys: []
@@ -8,7 +8,7 @@ Item {
     property real kbHeight: 6.25
     property int selected: -1
     property bool interactive: true
-    // Optional per-key cap colours (index-aligned with `keys`); empty entries use the theme colour.
+    // Optional per-key cap colours (index-aligned with `keys`); null entries use the theme cap.
     property var fills: []
     property bool showLabels: true
     // Paint mode: press and drag across keys; each key entered reports keyClicked once per stroke.
@@ -16,51 +16,72 @@ Item {
     signal keyClicked(int index)
 
     readonly property real unit: Math.min(width / kbWidth, height / kbHeight)
+    readonly property real gap: Math.max(2, unit * 0.07)
     implicitHeight: width / kbWidth * kbHeight
-
-    property var pal
-    readonly property bool dark: pal.window.hslLightness < 0.5
 
     Repeater {
         model: root.keys
-        delegate: Rectangle {
+        delegate: Item {
             id: cap
             required property var modelData
             required property int index
-            readonly property bool mod: modelData.color !== "#aaaaaa"
+            readonly property bool alpha: modelData.color === "#aaaaaa"
             readonly property bool isKnob: modelData.encoder !== null && modelData.encoder !== undefined
+            readonly property var fill: root.fills.length > index ? root.fills[index] : null
+            readonly property bool isSel: index === root.selected
+            readonly property bool hot: mouse.containsMouse && root.interactive && !root.paintMode
+            readonly property color base: fill ? fill : (alpha ? Theme.capAlpha : Theme.capMod)
+            readonly property real lift: fill ? 2 : 3
             x: modelData.x * root.unit
             y: modelData.y * root.unit
-            width: modelData.w * root.unit - 3
-            height: modelData.h * root.unit - 3
-            radius: Math.max(4, root.unit * 0.12)
-            readonly property var fill: root.fills.length > index ? root.fills[index] : null
-            readonly property color capColor: fill ? fill : base
-            color: fill ? (mouse.containsMouse && root.interactive ? Qt.lighter(capColor, 1.1) : capColor)
-                 : index === root.selected ? pal.highlight
-                 : mouse.containsMouse && root.interactive ? Qt.lighter(base, 1.12)
-                 : base
-            readonly property color base: root.dark
-                ? (mod ? Qt.rgba(0.20, 0.21, 0.24, 1) : Qt.rgba(0.27, 0.28, 0.32, 1))
-                : (mod ? Qt.rgba(0.80, 0.81, 0.84, 1) : Qt.rgba(0.93, 0.94, 0.95, 1))
-            border.width: index === root.selected && fill ? 3 : 1
-            border.color: index === root.selected && fill ? pal.highlight
-                        : root.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.16)
-            Behavior on color { ColorAnimation { duration: 90 } }
+            width: modelData.w * root.unit - root.gap
+            height: modelData.h * root.unit - root.gap
 
-            Text {
+            // Soft glow under lit caps
+            Rectangle {
+                visible: cap.fill !== null
+                anchors.fill: face
+                anchors.margins: -3
+                radius: face.radius + 3
+                color: cap.base
+                opacity: 0.22
+            }
+            Rectangle {
+                id: edge
                 anchors.fill: parent
-                anchors.margins: 3
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                text: cap.isKnob ? (cap.modelData.knobLabel || "⟳") : cap.modelData.label
-                elide: Text.ElideRight
-                fontSizeMode: Text.Fit
-                minimumPixelSize: 7
-                font.pixelSize: Math.max(9, root.unit * 0.3)
-                color: cap.fill ? (cap.fill.hslLightness > 0.55 ? "#111111" : "#ffffff")
-                     : index === root.selected ? pal.highlightedText : pal.windowText
-                opacity: !root.showLabels || (cap.modelData.label === "" && !cap.isKnob) ? 0 : 1
+                radius: Math.max(4, root.unit * 0.13)
+                color: cap.fill ? Qt.darker(cap.base, 1.45) : Theme.capEdge
+            }
+            Rectangle {
+                id: face
+                x: 0
+                y: cap.isSel || cap.hot ? 0 : 0
+                width: parent.width
+                height: parent.height - (mouse.pressed ? 1 : cap.lift)
+                radius: edge.radius
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.lighter(cap.base, cap.fill ? 1.15 : (Theme.dark ? 1.18 : 1.02)) }
+                    GradientStop { position: 1.0; color: cap.hot ? Qt.lighter(cap.base, 1.08) : cap.base }
+                }
+                border.width: cap.isSel ? 2 : 1
+                border.color: cap.isSel ? Theme.accent : (Theme.dark ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(0, 0, 0, 0.08))
+                Behavior on height { NumberAnimation { duration: 70 } }
+
+                Text {
+                    anchors.fill: parent
+                    anchors.margins: 3
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    text: cap.isKnob ? (cap.modelData.knobLabel || "⟳") : cap.modelData.label
+                    elide: Text.ElideRight
+                    fontSizeMode: Text.Fit
+                    minimumPixelSize: 7
+                    font.pixelSize: Math.max(9, root.unit * 0.27)
+                    font.weight: Font.Medium
+                    lineHeight: 0.95
+                    color: cap.fill ? (cap.fill.hslLightness > 0.55 ? "#111111" : "#ffffff") : Theme.capText
+                    opacity: !root.showLabels || (cap.modelData.label === "" && !cap.isKnob) ? 0 : 0.92
+                }
             }
             MouseArea {
                 id: mouse
@@ -84,8 +105,8 @@ Item {
         function keyAt(px, py) {
             for (let i = 0; i < root.keys.length; i++) {
                 const k = root.keys[i];
-                if (px >= k.x * root.unit && px < (k.x + k.w) * root.unit - 3
-                    && py >= k.y * root.unit && py < (k.y + k.h) * root.unit - 3) return i;
+                if (px >= k.x * root.unit && px < (k.x + k.w) * root.unit - root.gap
+                    && py >= k.y * root.unit && py < (k.y + k.h) * root.unit - root.gap) return i;
             }
             return -1;
         }

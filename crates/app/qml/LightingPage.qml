@@ -2,27 +2,31 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// Backlight controls. Changes apply live; "Save to keyboard" makes them survive a power cycle.
+// Backlight, per-key colours, regions and indicators. Changes apply live; "Save to keyboard"
+// makes them survive a power cycle.
 Item {
     id: root
     property var backend
-    property var pal
-    property var state: null   // {brightness, effect, speed, hue, saturation, effects:[{name,id}]}
+    property var state: null           // {brightness, effect, speed, hue, saturation, effects:[{name,id}]}
     property bool dirty: false
     property bool saved: false
     property int effectId: -1
-    property var kc: null            // extended lighting state, null when unsupported
+    property int brightVal: 255
+    property int speedVal: 127
+    property int hueVal: 0
+    property int satVal: 0
+    property var kc: null              // extended lighting state, null when unsupported
     property var keys: []
     property real kbWidth: 22.5
     property real kbHeight: 6.25
-    property int hueVal: 0
-    property int satVal: 0
 
     function refresh() {
         const raw = backend.rgb();
         state = raw === "null" ? null : JSON.parse(raw);
-        effectId = state ? state.effect : -1;
-        if (state) { hueVal = state.hue; satVal = state.saturation; }
+        if (state) {
+            effectId = state.effect; brightVal = state.brightness; speedVal = state.speed;
+            hueVal = state.hue; satVal = state.saturation;
+        }
         const k = backend.kc_state();
         kc = k === "null" ? null : JSON.parse(k);
         dirty = false;
@@ -33,179 +37,202 @@ Item {
         if (backend.connected) refresh();
         const t = backend.env("KEYWRIGHT_TAB");
         if (t !== "") tabs.currentIndex = parseInt(t);
+        const pe = backend.env("KEYWRIGHT_PREVIEW_EFFECT");   // development only: preview an effect without writing it
+        if (pe !== "") effectId = parseInt(pe);
     }
 
     function put(field, value) {
-        if (backend.set_rgb(field, value)) {
-            state[field] = value; dirty = true; saved = false;
-            if (field === "effect") effectId = value;
-        }
+        if (!backend.set_rgb(field, value)) return;
+        dirty = true; saved = false;
+        if (field === "effect") effectId = value;
+        else if (field === "brightness") brightVal = value;
+        else if (field === "speed") speedVal = value;
     }
     function putColor(hue, sat) {
         if (backend.set_rgb_color(hue, sat)) { hueVal = hue; satVal = sat; dirty = true; saved = false; }
     }
-
-    // A labelled slider row.
-    component Row2: RowLayout {
-        property alias label: lbl.text
-        property alias slider: sl
-        property string valueText: Math.round(sl.value)
-        property alias from: sl.from
-        property alias to: sl.to
-        property alias value: sl.value
-        signal moved(real v)
-        Layout.fillWidth: true
-        spacing: 16
-        Label { id: lbl; Layout.preferredWidth: 110; opacity: 0.8 }
-        Slider {
-            id: sl
-            Layout.fillWidth: true
-            from: 0; to: 255; stepSize: 1
-            onMoved: parent.moved(value)
-        }
-        Label { text: parent.valueText; Layout.preferredWidth: 40; horizontalAlignment: Text.AlignRight; opacity: 0.7 }
+    function saveBasic() {
+        if (backend.save_rgb()) { dirty = false; saved = true; }
     }
-
-    readonly property color swatch: Qt.hsva(hueVal / 255, satVal / 255, 1, 1)
+    function useEffect(id) { put("effect", id); }
 
     // Built-in effects, plus the two Keychron ones when the keyboard supports them.
     readonly property var allEffects: state ? (kc ? state.effects.concat([{ name: "Per-key RGB", id: 23 }, { name: "Mixed RGB", id: 24 }]) : state.effects) : []
-    function useEffect(id) { put("effect", id); }
-
-    TabBar {
-        id: tabs
-        visible: root.state !== null
-        x: 20; y: 12
-        TabButton { text: "Backlight"; width: implicitWidth }
-        TabButton { text: "Per-key"; width: implicitWidth; enabled: root.kc !== null }
-        TabButton { text: "Regions"; width: implicitWidth; enabled: root.kc !== null }
-        TabButton { text: "Indicators"; width: implicitWidth; enabled: root.kc !== null }
+    readonly property var pages: [basicPage, perKey, regions, indicators]
+    readonly property var current: pages[tabs.currentIndex]
+    readonly property bool currentDirty: current.dirty === true
+    readonly property string effectName: {
+        const e = allEffects.find(e => e.id === effectId);
+        return e ? e.name : "";
     }
 
-    StackLayout {
-        visible: root.state !== null
-        anchors { left: parent.left; right: parent.right; top: tabs.bottom; bottom: parent.bottom }
-        currentIndex: tabs.currentIndex
-
-        Item {
     ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 28
+        spacing: 18
         visible: root.state !== null
-        width: Math.min(parent.width - 40, 720)
-        x: 20; y: 20
-        spacing: 22
 
-        Label { text: "Backlight"; font.bold: true; font.pixelSize: 22 }
-
-        RowLayout {
-            spacing: 16
-            Label { text: "Effect"; Layout.preferredWidth: 110; opacity: 0.8 }
-            ComboBox {
-                Layout.fillWidth: true
-                model: root.allEffects.map(e => e.name)
-                currentIndex: root.state ? root.allEffects.findIndex(e => e.id === root.state.effect) : -1
-                onActivated: i => root.put("effect", root.allEffects[i].id)
-            }
-        }
-
-        Row2 {
-            label: "Brightness"
-            value: root.state ? root.state.brightness : 0
-            valueText: Math.round(value / 255 * 100) + "%"
-            onMoved: v => root.put("brightness", Math.round(v))
-        }
-        Row2 {
-            label: "Effect speed"
-            value: root.state ? root.state.speed : 0
-            valueText: Math.round(value / 255 * 100) + "%"
-            onMoved: v => root.put("speed", Math.round(v))
-        }
-
-        // Colour: hue and saturation, with a live swatch.
-        RowLayout {
+        PageHeader {
             Layout.fillWidth: true
-            spacing: 16
-            Label { text: "Colour"; Layout.preferredWidth: 110; opacity: 0.8; Layout.alignment: Qt.AlignTop }
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 14
-                Slider {
-                    id: hue
-                    Layout.fillWidth: true
-                    from: 0; to: 255; stepSize: 1
-                    value: root.hueVal
-                    onMoved: root.putColor(Math.round(value), root.satVal)
-                    background: Rectangle {
-                        y: hue.height / 2 - 5; height: 10; radius: 5; width: hue.availableWidth; x: hue.leftPadding
-                        gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0.00; color: "#ff0000" }
-                            GradientStop { position: 0.17; color: "#ffff00" }
-                            GradientStop { position: 0.33; color: "#00ff00" }
-                            GradientStop { position: 0.50; color: "#00ffff" }
-                            GradientStop { position: 0.67; color: "#0000ff" }
-                            GradientStop { position: 0.83; color: "#ff00ff" }
-                            GradientStop { position: 1.00; color: "#ff0000" }
+            title: "Lighting"
+            subtitle: "Changes show on the keyboard as you make them."
+            KTabs {
+                id: tabs
+                model: ["Backlight", "Per-key", "Regions", "Indicators"]
+                disabled: root.kc ? [] : [1, 2, 3]
+            }
+            KButton {
+                text: root.saved && !root.currentDirty ? "Saved" : "Save to keyboard"
+                iconName: root.saved && !root.currentDirty ? "check" : "save"
+                variant: "primary"
+                enabled: root.currentDirty
+                onClicked: { root.current.save(); }
+            }
+        }
+
+        StackLayout {
+            id: stack
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            currentIndex: tabs.currentIndex
+
+            // Backlight ---------------------------------------------------------------------
+            Item {
+                id: basicPage
+                property bool dirty: root.dirty
+                function save() { root.saveBasic(); }
+
+                ScrollView {
+                    anchors.fill: parent
+                    contentWidth: availableWidth
+                    clip: true
+                    ColumnLayout {
+                        width: parent.width
+                        spacing: 16
+
+                        Card {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: (width - 2 * padding) / root.kbWidth * root.kbHeight + 2 * padding + 34
+                            padding: 20
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 10
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text { text: "Live preview"; color: Theme.text; font.pixelSize: 15; font.weight: Font.DemiBold }
+                                    Text { text: root.effectName; color: Theme.accentHi; font.pixelSize: 13; font.weight: Font.Medium }
+                                    Item { Layout.fillWidth: true }
+                                    Text { text: "An approximation. Click keys to try the reactive effects."; color: Theme.faint; font.pixelSize: 12 }
+                                }
+                                LightingPreview {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    running: root.visible && stack.currentIndex === 0
+                                    keys: root.keys
+                                    kbWidth: root.kbWidth
+                                    kbHeight: root.kbHeight
+                                    effect: root.effectId
+                                    hue: root.hueVal
+                                    sat: root.satVal
+                                    bright: root.brightVal
+                                    speed: root.speedVal
+                                    perKey: root.kc ? root.kc.colors : null
+                                    perKeyMode: root.kc ? root.kc.perKeyType : 0
+                                    mixed: root.kc ? { regions: root.kc.regions, effects: root.kc.regionEffects } : null
+                                }
+                            }
+                        }
+
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: width > 900 ? 2 : 1
+                            columnSpacing: 16
+                            uniformCellWidths: true
+                            rowSpacing: 16
+
+                            Card {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignTop
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: 16
+                                    Text { text: "Effect"; color: Theme.text; font.pixelSize: 15; font.weight: Font.DemiBold }
+                                    KCombo {
+                                        Layout.fillWidth: true
+                                        model: root.allEffects.map(e => e.name)
+                                        currentIndex: root.allEffects.findIndex(e => e.id === root.effectId)
+                                        onActivated: i => root.put("effect", root.allEffects[i].id)
+                                    }
+                                    Text {
+                                        visible: root.effectId === 23 || root.effectId === 24
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        color: Theme.dim; font.pixelSize: 12
+                                        text: root.effectId === 23 ? "Colours come from the Per-key tab." : "Colours and effects come from the Regions tab."
+                                    }
+                                    Text { text: "Colour"; color: Theme.text; font.pixelSize: 15; font.weight: Font.DemiBold; Layout.topMargin: 4 }
+                                    HsvPicker {
+                                        Layout.fillWidth: true
+                                        withValue: false
+                                        h: root.hueVal; s: root.satVal
+                                        onEdited: (nh, ns, nv) => root.putColor(nh, ns)
+                                    }
+                                }
+                            }
+                            Card {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignTop
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: 14
+                                    Text { text: "Intensity"; color: Theme.text; font.pixelSize: 15; font.weight: Font.DemiBold }
+                                    RowLayout {
+                                        Text { text: "Brightness"; color: Theme.dim; font.pixelSize: 13; Layout.fillWidth: true }
+                                        Text { text: Math.round(root.brightVal / 255 * 100) + "%"; color: Theme.text; font.pixelSize: 13; font.weight: Font.Medium }
+                                    }
+                                    KSlider { Layout.fillWidth: true; value: root.brightVal; onMoved: root.put("brightness", Math.round(value)) }
+                                    RowLayout {
+                                        Layout.topMargin: 6
+                                        Text { text: "Effect speed"; color: Theme.dim; font.pixelSize: 13; Layout.fillWidth: true }
+                                        Text { text: Math.round(root.speedVal / 255 * 100) + "%"; color: Theme.text; font.pixelSize: 13; font.weight: Font.Medium }
+                                    }
+                                    KSlider { Layout.fillWidth: true; value: root.speedVal; onMoved: root.put("speed", Math.round(value)) }
+                                    Text {
+                                        Layout.topMargin: 6
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        color: Theme.faint; font.pixelSize: 12
+                                        text: root.dirty ? "Applied now. Save to keep it after the keyboard powers off." : root.saved ? "Saved to the keyboard." : "Drag a slider and watch the preview and the keyboard."
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                Slider {
-                    id: sat
-                    Layout.fillWidth: true
-                    from: 0; to: 255; stepSize: 1
-                    value: root.satVal
-                    onMoved: root.putColor(root.hueVal, Math.round(value))
-                    background: Rectangle {
-                        y: sat.height / 2 - 5; height: 10; radius: 5; width: sat.availableWidth; x: sat.leftPadding
-                        gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0; color: "#ffffff" }
-                            GradientStop { position: 1; color: Qt.hsva(root.hueVal / 255, 1, 1, 1) }
-                        }
-                    }
-                }
             }
-            Rectangle {
-                Layout.preferredWidth: 64; Layout.preferredHeight: 64; radius: 12
-                Layout.alignment: Qt.AlignTop
-                color: root.swatch
-                border.color: Qt.rgba(0, 0, 0, 0.25)
-            }
-        }
 
-        RowLayout {
-            spacing: 14
-            Button {
-                text: "Save to keyboard"
-                highlighted: root.dirty
-                enabled: root.dirty
-                onClicked: if (backend.save_rgb()) { root.dirty = false; root.saved = true; }
+            PerKeyPage {
+                id: perKey
+                backend: root.backend; keys: root.keys; kbWidth: root.kbWidth; kbHeight: root.kbHeight
+                kc: root.kc; effectId: root.effectId
+                onShowEffect: root.useEffect(23)
             }
-            Label {
-                text: root.dirty ? "Applied now. Save to keep it after the keyboard powers off."
-                    : root.saved ? "Saved." : ""
-                opacity: 0.7
+            RegionsPage {
+                id: regions
+                backend: root.backend; keys: root.keys; kbWidth: root.kbWidth; kbHeight: root.kbHeight
+                kc: root.kc; effectId: root.effectId
+                effects: root.state ? root.state.effects : []
+                onShowEffect: root.useEffect(24)
             }
+            IndicatorsPage { id: indicators; backend: root.backend; kc: root.kc }
         }
     }
 
-        }
-
-        PerKeyPage {
-            backend: root.backend; pal: root.pal; keys: root.keys; kbWidth: root.kbWidth; kbHeight: root.kbHeight; kc: root.kc; effectId: root.effectId
-            onShowEffect: root.useEffect(23)
-        }
-        RegionsPage {
-            backend: root.backend; pal: root.pal; keys: root.keys; kbWidth: root.kbWidth; kbHeight: root.kbHeight; kc: root.kc; effectId: root.effectId
-            effects: root.state ? root.state.effects : []
-            onShowEffect: root.useEffect(24)
-        }
-        IndicatorsPage { backend: root.backend; pal: root.pal; kc: root.kc }
-    }
-
-    Label {
+    Text {
         anchors.centerIn: parent
         visible: root.state === null
         text: backend.connected ? "Could not read the lighting settings." : "Connect the keyboard to change lighting."
-        opacity: 0.6
+        color: Theme.dim
+        font.pixelSize: 14
     }
 }

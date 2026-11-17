@@ -6,7 +6,6 @@ import QtQuick.Layouts
 Item {
     id: root
     property var backend
-    property var pal
     property var keys: []
     property real kbWidth: 22.5
     property real kbHeight: 6.25
@@ -15,8 +14,10 @@ Item {
     property int s: 255
     property int v: 255
     property bool dirty: false
-    property int effectId: -1        // current backlight effect, so painting can switch to Per-key RGB
-    signal showEffect()            // ask the Lighting page to switch the keyboard to Per-key RGB
+    property int effectId: -1      // current backlight effect, so painting can switch to Per-key RGB
+    signal showEffect()
+
+    function save() { if (backend.kc_apply("save", "{}")) dirty = false; }
 
     readonly property var fills: {
         if (!kc) return [];
@@ -43,49 +44,76 @@ Item {
         }
     }
 
-    ColumnLayout {
+    ScrollView {
         anchors.fill: parent
-        anchors.margins: 20
-        spacing: 16
+        contentWidth: availableWidth
+        clip: true
+        ColumnLayout {
+            width: parent.width
+            spacing: 16
 
-        RowLayout {
-            spacing: 14
-            Label { text: "Mode"; opacity: 0.8 }
-            ComboBox {
-                model: ["Solid", "Breathing", "Reactive (simple)", "Reactive (wide)", "Reactive (splash)"]
-                currentIndex: root.kc ? root.kc.perKeyType : 0
-                onActivated: i => { if (root.backend.kc_apply("perKeyType", JSON.stringify({ kind: i }))) { root.kc = Object.assign({}, root.kc, { perKeyType: i }); root.dirty = true; } }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: width > 900 ? 2 : 1
+                columnSpacing: 16
+                uniformCellWidths: true
+                rowSpacing: 16
+                Card {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignTop
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 14
+                        Text { text: "Brush colour"; color: Theme.text; font.pixelSize: 15; font.weight: Font.DemiBold }
+                        HsvPicker {
+                            Layout.fillWidth: true
+                            h: root.h; s: root.s; v: root.v
+                            onEdited: (nh, ns, nv) => { root.h = nh; root.s = ns; root.v = nv; }
+                        }
+                    }
+                }
+                Card {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignTop
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 14
+                        Text { text: "How the colours behave"; color: Theme.text; font.pixelSize: 15; font.weight: Font.DemiBold }
+                        KCombo {
+                            Layout.fillWidth: true
+                            model: ["Solid", "Breathing", "Reactive (simple)", "Reactive (wide)", "Reactive (splash)"]
+                            currentIndex: root.kc ? root.kc.perKeyType : 0
+                            onActivated: i => { if (root.backend.kc_apply("perKeyType", JSON.stringify({ kind: i }))) { root.kc = Object.assign({}, root.kc, { perKeyType: i }); root.dirty = true; } }
+                        }
+                        RowLayout {
+                            spacing: 10
+                            KButton { text: "Fill every key"; iconName: "palette"; onClicked: root.fillAll() }
+                            KButton { text: "Show on keyboard"; variant: "ghost"; iconName: "bolt"; onClicked: root.showEffect() }
+                        }
+                        Text {
+                            Layout.fillWidth: true; wrapMode: Text.WordWrap
+                            color: Theme.faint; font.pixelSize: 12
+                            text: "Pick a colour, then click or drag across the keys below. The first stroke switches the keyboard to Per-key RGB."
+                        }
+                    }
+                }
             }
-            Button { text: "Show on keyboard"; onClicked: root.showEffect() }
-            Item { Layout.fillWidth: true }
-            Button {
-                text: "Save to keyboard"
-                highlighted: root.dirty
-                enabled: root.dirty
-                onClicked: if (root.backend.kc_apply("save", "{}")) root.dirty = false
+
+            Card {
+                Layout.fillWidth: true
+                Layout.preferredHeight: (width - 2 * padding) / root.kbWidth * root.kbHeight + 2 * padding
+                padding: 22
+                KeyboardView {
+                    anchors.fill: parent
+                    keys: root.keys
+                    kbWidth: root.kbWidth
+                    kbHeight: root.kbHeight
+                    fills: root.fills
+                    showLabels: false
+                    paintMode: true
+                    onKeyClicked: i => root.paint(i)
+                }
             }
         }
-
-        Label { text: "Pick a colour, then click keys to paint them."; opacity: 0.7 }
-        HsvPicker {
-            Layout.fillWidth: true
-            h: root.h; s: root.s; v: root.v
-            onEdited: (nh, ns, nv) => { root.h = nh; root.s = ns; root.v = nv; }
-        }
-        Button { text: "Fill every key with this colour"; onClicked: root.fillAll() }
-
-        KeyboardView {
-            Layout.fillWidth: true
-            Layout.preferredHeight: width / root.kbWidth * root.kbHeight
-            pal: root.pal
-            keys: root.keys
-            kbWidth: root.kbWidth
-            kbHeight: root.kbHeight
-            fills: root.fills
-            showLabels: false
-            paintMode: true
-            onKeyClicked: i => root.paint(i)
-        }
-        Item { Layout.fillHeight: true }
     }
 }
