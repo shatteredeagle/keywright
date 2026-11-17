@@ -32,6 +32,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn env(self: &Backend, name: &QString) -> QString;
+
+        #[qinvokable]
+        fn theme(self: &Backend) -> QString;
+
+        #[qinvokable]
+        fn set_theme(self: &Backend, mode: &QString);
     }
 }
 
@@ -146,5 +152,32 @@ impl qobject::Backend {
 
     fn env(&self, name: &QString) -> QString {
         QString::from(std::env::var(name.to_string()).unwrap_or_default().as_str())
+    }
+}
+
+fn theme_file() -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))?;
+    Some(base.join("keywright").join("theme"))
+}
+
+impl qobject::Backend {
+    /// Saved appearance: "system", "light" or "dark".
+    fn theme(&self) -> QString {
+        let saved = theme_file().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+        let mode = match saved.trim() {
+            m @ ("light" | "dark") => m,
+            _ => "system",
+        };
+        QString::from(mode)
+    }
+
+    fn set_theme(&self, mode: &QString) {
+        let Some(path) = theme_file() else { return };
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(path, mode.to_string());
     }
 }

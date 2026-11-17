@@ -7,7 +7,7 @@ Item {
     id: root
     property var layers: []   // [[{label, code, ...}]] same key order per layer
 
-    SystemPalette { id: pal }
+    property var pal
 
     // Which base-layer key holds a given layer (code 0x5220 + n).
     function holder(n) {

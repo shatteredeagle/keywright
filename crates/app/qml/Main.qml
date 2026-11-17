@@ -13,7 +13,40 @@ ApplicationWindow {
     title: "Keywright"
 
     Backend { id: backend }
-    SystemPalette { id: pal }
+    SystemPalette { id: sysPal }
+
+    // Appearance: "system" follows the desktop; "light" and "dark" force a palette.
+    property string themeMode: "system"
+    readonly property bool useDark: themeMode === "dark"
+        || (themeMode === "system" && sysPal.window.hslLightness < 0.5)
+    readonly property var darkColors: ({
+        window: "#1b1c20", windowText: "#e6e7ea", base: "#25262b", alternateBase: "#2b2d33",
+        text: "#e6e7ea", button: "#33353c", buttonText: "#e6e7ea", highlight: "#3d8bfd",
+        highlightedText: "#ffffff", mid: "#4a4d55", dark: "#121316", light: "#42454d",
+        placeholderText: "#8b8e96"
+    })
+    readonly property var lightColors: ({
+        window: "#efeff1", windowText: "#1f2024", base: "#ffffff", alternateBase: "#f5f5f7",
+        text: "#1f2024", button: "#e4e5e9", buttonText: "#1f2024", highlight: "#2f7bf0",
+        highlightedText: "#ffffff", mid: "#b8bac2", dark: "#8d8f98", light: "#ffffff",
+        placeholderText: "#767983"
+    })
+    function tone(name) {
+        return themeMode === "system" ? sysPal[name] : (useDark ? darkColors : lightColors)[name];
+    }
+    palette.window: tone("window")
+    palette.windowText: tone("windowText")
+    palette.base: tone("base")
+    palette.alternateBase: tone("alternateBase")
+    palette.text: tone("text")
+    palette.button: tone("button")
+    palette.buttonText: tone("buttonText")
+    palette.highlight: tone("highlight")
+    palette.highlightedText: tone("highlightedText")
+    palette.mid: tone("mid")
+    palette.dark: tone("dark")
+    palette.light: tone("light")
+    palette.placeholderText: tone("placeholderText")
 
     property var keymap: ({ width: 22.5, height: 6.25, layers: [] })
     property var catalog: []
@@ -30,6 +63,9 @@ ApplicationWindow {
         }
     }
     Component.onCompleted: {
+        themeMode = backend.theme();
+        const forced = backend.env("KEYWRIGHT_THEME");
+        if (forced !== "") themeMode = forced;
         reload();
         const pg = backend.env("KEYWRIGHT_PAGE");
         if (pg !== "") pages.currentIndex = parseInt(pg);
@@ -45,7 +81,7 @@ ApplicationWindow {
     Rectangle {
     id: bg
     anchors.fill: parent
-    color: pal.window
+    color: win.palette.window
     RowLayout {
         id: mainRow
         anchors.fill: parent
@@ -55,7 +91,7 @@ ApplicationWindow {
         Rectangle {
             Layout.fillHeight: true
             Layout.preferredWidth: 190
-            color: Qt.darker(pal.window, 1.06)
+            color: Qt.darker(win.palette.window, 1.08)
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 12
@@ -79,6 +115,15 @@ ApplicationWindow {
                     text: backend.status
                     opacity: 0.7
                     font.pixelSize: 12
+                }
+                ComboBox {
+                    Layout.fillWidth: true
+                    model: ["System theme", "Light", "Dark"]
+                    currentIndex: ["system", "light", "dark"].indexOf(win.themeMode)
+                    onActivated: i => {
+                        win.themeMode = ["system", "light", "dark"][i];
+                        backend.set_theme(win.themeMode);
+                    }
                 }
                 Button { text: "Reconnect"; Layout.fillWidth: true; onClicked: win.reload() }
             }
@@ -114,6 +159,7 @@ ApplicationWindow {
                     KeyboardView {
                         Layout.fillWidth: true
                         Layout.preferredHeight: width / win.keymap.width * win.keymap.height
+                        pal: win.palette
                         keys: win.layerKeys
                         kbWidth: win.keymap.width
                         kbHeight: win.keymap.height
@@ -152,6 +198,7 @@ ApplicationWindow {
 
             // Shortcuts
             ShortcutsPage {
+                pal: win.palette
                 layers: win.keymap.layers
                 Layout.margins: 20
             }

@@ -13,7 +13,7 @@ Item {
     readonly property real unit: Math.min(width / kbWidth, height / kbHeight)
     implicitHeight: width / kbWidth * kbHeight
 
-    SystemPalette { id: pal }
+    property var pal
     readonly property bool dark: pal.window.hslLightness < 0.5
 
     Repeater {
