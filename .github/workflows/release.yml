@@ -64,11 +64,11 @@ jobs:
       - name: Stub the AGL framework (macOS)
         if: runner.os == 'macOS'
         run: |
-          # Qt 6.8 still links AGL, which Apple's newest SDK no longer ships. Nothing calls it.
+          # Qt 6.8 still links AGL, which Apple's newest SDK no longer ships. Nothing calls it, so link against a stub and then drop it from the binary.
           d="$RUNNER_TEMP/stubs/AGL.framework"
           mkdir -p "$d"
           echo "" | clang -x c - -dynamiclib -install_name "@rpath/AGL.framework/AGL" -o "$d/AGL"
-          echo "RUSTFLAGS=-C link-arg=-F$RUNNER_TEMP/stubs" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=-C link-arg=-F$RUNNER_TEMP/stubs -C link-arg=-Wl,-dead_strip_dylibs" >> "$GITHUB_ENV"
       - name: Build
         env:
           # Qt 6.8's headers need this with Apple's newest clang on arm64.
