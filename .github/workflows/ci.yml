@@ -70,5 +70,8 @@ jobs:
         run: |
           bin=target/release/keywright
           [ -f "$bin.exe" ] && bin="$bin.exe"
-          timeout 60 "$bin" 2>&1 | tee selftest.log
+          # macOS has no `timeout`; the self-test exits on its own, so a watchdog does the job.
+          ( sleep 90; pkill -f "$bin" ) & wd=$!
+          "$bin" 2>&1 | tee selftest.log
+          kill $wd 2>/dev/null || true
           grep -q keywright-qml-ready selftest.log
